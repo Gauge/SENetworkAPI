@@ -2,11 +2,18 @@
 using System;
 using VRage.Utils;
 
-namespace KingOfTheHill.Coms
+namespace ModNetworkAPI
 {
     internal class Server : ICommunicate
     {
+        /// <summary>
+        /// Event triggers apon reciveing data from the client
+        /// </summary>
         public event Action<Command> OnCommandRecived = delegate { };
+        
+        /// <summary>
+        /// Event triggers apon client chat input starting with this mods Keyword
+        /// </summary>
         public event Action<string> OnTerminalInput = delegate { };
 
         private ushort ModId;
@@ -32,7 +39,7 @@ namespace KingOfTheHill.Coms
         {
             try
             {
-                Command cmd = MyAPIGateway.Utilities.SerializeFromBinary<Command>(msg);
+                Command cmd = ((object)msg) as Command;
 
                 if (cmd != null)
                 {
@@ -41,8 +48,7 @@ namespace KingOfTheHill.Coms
             }
             catch (Exception e)
             {
-                //Tools.Log(MyLogSeverity.Warning, "Did not recieve a command packet. Mod Id may be compromise. Please send a list of all mods used with this on to me (the mod owner)");
-                //Tools.Log(MyLogSeverity.Error, e.ToString());
+                MyLog.Default.Error($"Did not recieve a command packet. Mod Id may be compromise. Please send a list of all mods used with this on to me (the mod owner)\n{e.ToString()}");
             }
         }
 
@@ -68,9 +74,7 @@ namespace KingOfTheHill.Coms
 
         public void SendCommand(Command cmd, ulong steamId = ulong.MinValue)
         {
-            byte[] data = MyAPIGateway.Utilities.SerializeToBinary<Command>(cmd);
-            //Logger.Log(MyLogSeverity.Info, $"[Server] Sending message of length {data.Length}");
-            //Logger.Log(MyLogSeverity.Info, cmd.ToString());
+            byte[] data = ((object)cmd) as byte[];
 
             if (steamId == ulong.MinValue)
             {

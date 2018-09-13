@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace KingOfTheHill.Coms
+namespace ModNetworkAPI
 {
     public enum MultiplayerTypes { Dedicated, Server, Client }
 

@@ -2,17 +2,21 @@
 using System;
 using VRage.Utils;
 
-namespace KingOfTheHill.Coms
+namespace ModNetworkAPI
 {
     public class Client : ICommunicate
     {
-        public event Action<Command> OnCommandRecived = delegate { };
         /// <summary>
-        /// Terminal string, isServer
+        /// Event triggers apon reciveing data from the server
+        /// </summary>
+        public event Action<Command> OnCommandRecived = delegate { };
+        
+        /// <summary>
+        /// Event triggers apon client chat input starting with this mods Keyword
         /// </summary>
         public event Action<string> OnTerminalInput = delegate { };
 
-        private ushort ModId;
+        private ushort ComId;
         private string Keyword;
 
         public MultiplayerTypes MultiplayerType => Server.GetMultiplayerType();
@@ -20,22 +24,25 @@ namespace KingOfTheHill.Coms
         /// <summary>
         /// Handles communication with the server
         /// </summary>
-        /// <param name="modId">Identifies what communications are picked up by this mod</param>
+        /// <param name="comId">Identifies the channel to pass information to and from this mod</param>
         /// <param name="keyword">identifies what chat entries should be captured and sent to the server</param>
-        public Client(ushort modId, string keyword)
+        public Client(ushort comId, string keyword)
         {
-            ModId = modId;
+            ComId = comId;
             Keyword = keyword.ToLower();
 
             MyAPIGateway.Utilities.MessageEntered += HandleChatInput;
-            MyAPIGateway.Multiplayer.RegisterMessageHandler(this.ModId, HandleMessage);
+            MyAPIGateway.Multiplayer.RegisterMessageHandler(this.ComId, HandleMessage);
         }
 
+        /// <summary>
+        /// Closes any long term processes that are no longer needed
+        /// </summary>
         public void Close()
         {
-            //Tools.Log(MyLogSeverity.Info, "Unregisering handlers before close");
+            MyLog.Default.Info($"Unregistering communication stream: {ComId}");
             MyAPIGateway.Utilities.MessageEntered -= HandleChatInput;
-            MyAPIGateway.Multiplayer.UnregisterMessageHandler(this.ModId, HandleMessage);
+            MyAPIGateway.Multiplayer.UnregisterMessageHandler(this.ComId, HandleMessage);
         }
 
         private void HandleChatInput(string messageText, ref bool sendToOthers)
@@ -47,44 +54,49 @@ namespace KingOfTheHill.Coms
             OnTerminalInput.Invoke(messageText.Substring(Keyword.Length).Trim(' '));
         }
 
+        /// <summary>
+        /// Unpacks commands and handles arguments
+        /// </summary>
+        /// <param name="msg">Data chunck recived from server</param>
         private void HandleMessage(byte[] msg)
         {
             try
             {
-                //Logger.Log(MyLogSeverity.Info, $"[Client] Recived message of length {msg.Length}");
-                Command cmd = MyAPIGateway.Utilities.SerializeFromBinary<Command>(msg);
-                //Logger.Log(MyLogSeverity.Info, cmd.ToString());
+                Command cmd = ((object)msg) as Command;
 
                 if (cmd != null)
                 {
                     OnCommandRecived.Invoke(cmd);
                 }
             }
-            catch
+            catch (Exception e)
             {
-                //Tools.Log(MyLogSeverity.Warning, "Did not recieve a command packet. Mod Id may be compromise. Please send a list of all mods used with this on to me (the mod owner)");
+                MyLog.Default.Error($"Failed to unpack message:\n{e.ToString()}");
             }
         }
 
         /// <summary>
-        /// One of two methods for sending server messages
+        /// A methods for sending server messages
         /// </summary>
-        /// <param name="arguments">Command argument string</param>
-        /// <param name="message">Text for display purposes</param>
-        /// <param name="steamId">Player Identifier</param>
+        /// <param name="arguments">The argument, or "Command", to be executed by the server</param>
+        /// <param name="message">Text that will be displayed to the user</param>
+        /// <param name="steamId">The players steam id</param>
         public void SendCommand(string arguments, string message = null, ulong steamId = ulong.MinValue)
         {
             SendCommand(new Command {Arguments = arguments, Message = message }, steamId);
         }
 
+        /// <summary>
+        /// A methods for sending server messages
+        /// </summary>
+        /// <param name="cmd">The object to be sent to the server</param>
+        /// <param name="steamId">The players steam id</param>
         public void SendCommand(Command cmd, ulong steamId = ulong.MinValue)
         {
             cmd.SteamId = MyAPIGateway.Session.Player.SteamUserId;
-            byte[] data = MyAPIGateway.Utilities.SerializeToBinary(cmd);
-            //Logger.Log(MyLogSeverity.Info, $"[Server] Sending message of length {data.Length}");
-            //Logger.Log(MyLogSeverity.Info, cmd.ToString());
+            byte[] data = ((object)cmd) as byte[];
 
-            MyAPIGateway.Multiplayer.SendMessageToServer(ModId, data, true);
+            MyAPIGateway.Multiplayer.SendMessageToServer(ComId, data, true);
         }
     }
 }
