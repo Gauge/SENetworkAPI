@@ -1,6 +1,6 @@
 ﻿namespace ModNetworkAPI
 {
-    public class Command
+    internal class Command
     {
         public ulong SteamId { get; set; }
 

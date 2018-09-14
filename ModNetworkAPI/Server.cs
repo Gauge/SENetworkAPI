@@ -15,7 +15,7 @@ namespace ModNetworkAPI
         /// </summary>
         /// <param name="comId">Identifies the channel to pass information to and from this mod</param>
         /// <param name="keyword">identifies what chat entries should be captured and sent to the server</param>
-        public Server(ushort comId, string keyword = null) : base(comId, keyword)
+        public Server(ushort comId, string modName, string keyword = null) : base(comId, modName, keyword)
         {
         }
 
@@ -60,6 +60,12 @@ namespace ModNetworkAPI
         /// <param name="steamId">The players steam id</param>
         private void SendCommand(Command cmd, ulong steamId = ulong.MinValue, bool isReliable = true)
         {
+
+            if (!string.IsNullOrWhiteSpace(cmd.Message) && NetworkType == NetworkTypes.Server && MyAPIGateway.Session != null)
+            {
+                MyAPIGateway.Utilities.ShowMessage(ModName, cmd.Message);
+            }
+
             byte[] data = ((object)cmd) as byte[];
 
             if (steamId == ulong.MinValue)
