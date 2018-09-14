@@ -39,11 +39,11 @@ namespace ModNetworkAPI
         internal Dictionary<string, Action<string>> ChatCommands = new Dictionary<string, Action<string>>();
 
         /// <summary>
-        /// Sets up the event listeners and create a 
+        /// Event driven client, server syncing API. 
         /// </summary>
-        /// <param name="comId"></param>
-        /// <param name="modName">The title of your mod</param>
-        /// <param name="keyward"></param>
+        /// <param name="comId">The communication channel this mod will listen on</param>
+        /// <param name="modName">The title use for displaying chat messages</param>
+        /// <param name="keyward">The string identifying a chat command</param>
         public NetworkAPI(ushort comId, string modName, string keyword = null)
         {
             ComId = comId;
@@ -61,7 +61,7 @@ namespace ModNetworkAPI
         }
 
         /// <summary>
-        /// Determins if a message is a command. Triggers the TerminalInput event if it is one.
+        /// Invokes chat command events
         /// </summary>
         /// <param name="messageText">Chat message string</param>
         /// <param name="sendToOthers">should be shown normally in global chat</param>
@@ -215,7 +215,7 @@ namespace ModNetworkAPI
         public abstract void SendCommand(string commandString, string message = null, byte[] data = null, ulong steamId = ulong.MinValue, bool isReliable = true);
 
         /// <summary>
-        /// 
+        /// Unregisters listeners
         /// </summary>
         public void Close()
         {
@@ -241,10 +241,8 @@ namespace ModNetworkAPI
         }
 
         /// <summary>
-        /// Initialize
+        /// Initializes the default instance of the NetworkAPI
         /// </summary>
-        /// <param name="comId"></param>
-        /// <param name="keyword"></param>
         public static void Init(ushort comId, string modName, string keyword = null)
         {
             if (IsInitialized) return;

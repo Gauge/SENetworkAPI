@@ -15,6 +15,14 @@ namespace ModNetworkAPI
         {
         }
 
+        /// <summary>
+        /// Sends a command packet to the server
+        /// </summary>
+        /// <param name="commandString">The command to be executed</param>
+        /// <param name="message">Text that will be displayed in client chat</param>
+        /// <param name="data">A serialized object to be sent across the network</param>
+        /// <param name="steamId">The client reciving this packet (if 0 it sends to all clients)</param>
+        /// <param name="isReliable">Enture delivery of the packet</param>
         public override void SendCommand(string commandString, string message = null, byte[] data = null, ulong steamId = ulong.MinValue, bool isReliable = true)
         {
             if (MyAPIGateway.Session?.Player != null)
