@@ -2,7 +2,7 @@
 
 The ModNetworkAPI is a neat, robust rapper for Space Engineers mods. Designed to be plug and play, the ModNetworkAPI has very little setup overhead.
 
-To this in action check out: https://github.com/Gauge/RelativeTopSpeed
+To see this beeing used in a real world scenario check out: https://github.com/Gauge/RelativeTopSpeed
 
 ## Example
 
