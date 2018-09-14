@@ -83,9 +83,10 @@ Network.SendCommand("update"); // this will trigger the callback method of the r
 
 The `Network.SendCommand()` funciton has a few options
 ```cs
-Network.SendCommand("update"); // CommandString
-Network.SendCommand("update", "Hello World"); // A message that will be in clients chat
-Network.SendCommand("update", "Hello World", dataObj); // serialized object data
+Network.SendCommand(string command); // CommandString
+Network.SendCommand(string command, string message); // A message that will be in clients chat
+Network.SendCommand(string command, string message, byte[] data); // serialized object data
+Network.SendCommand(string command, string message, byte[] data, ulong steamId); // The receiver, Server only
 ```
 The `Network`when runing on the server instance can be cast for more specialized functions
 ```
