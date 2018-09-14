@@ -1,7 +1,5 @@
 ﻿using Sandbox.ModAPI;
-using System;
 using VRage.Utils;
-using VRageMath;
 
 namespace ModNetworkAPI
 {
@@ -17,13 +15,11 @@ namespace ModNetworkAPI
         {
         }
 
-        public override void SendCommand(string commandString, string message = null, object data = null, ulong steamId = ulong.MinValue, bool isReliable = true)
+        public override void SendCommand(string commandString, string message = null, byte[] data = null, ulong steamId = ulong.MinValue, bool isReliable = true)
         {
             if (MyAPIGateway.Session?.Player != null)
             {
-                Command cmd = new Command() { CommandString = commandString, Message = message, Data = data, SteamId = MyAPIGateway.Session.Player.SteamUserId };
-                byte[] packet = ((object)cmd) as byte[];
-
+                byte[] packet = MyAPIGateway.Utilities.SerializeToBinary(new Command() { CommandString = commandString, Message = message, Data = data, SteamId = MyAPIGateway.Session.Player.SteamUserId });
                 MyAPIGateway.Multiplayer.SendMessageToServer(ComId, packet, isReliable);
             }
             else

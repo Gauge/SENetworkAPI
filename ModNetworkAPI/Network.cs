@@ -16,7 +16,7 @@ namespace ModNetworkAPI
         /// Event triggers apon reciveing data over the network
         /// steamId, command, data
         /// </summary>
-        public event Action<ulong, string, object> OnCommandRecived = delegate { };
+        public event Action<ulong, string, byte[]> OnCommandRecived = delegate { };
 
         /// <summary>
         /// Event triggers apon client chat input starting with this mods Keyword
@@ -35,7 +35,7 @@ namespace ModNetworkAPI
 
         internal bool UsingTextCommands => Keyword != null;
 
-        internal Dictionary<string, Action<ulong, string, object>> NetworkCommands = new Dictionary<string, Action<ulong, string, object>>();
+        internal Dictionary<string, Action<ulong, string, byte[]>> NetworkCommands = new Dictionary<string, Action<ulong, string, byte[]>>();
         internal Dictionary<string, Action<string>> ChatCommands = new Dictionary<string, Action<string>>();
 
         /// <summary>
@@ -100,7 +100,7 @@ namespace ModNetworkAPI
         {
             try
             {
-                Command cmd = ((object)msg) as Command;
+                Command cmd = MyAPIGateway.Utilities.SerializeFromBinary<Command>(msg);
 
                 if (!string.IsNullOrWhiteSpace(cmd.Message) && NetworkType == NetworkTypes.Client && MyAPIGateway.Session != null)
                 {
@@ -121,7 +121,7 @@ namespace ModNetworkAPI
 
                 if (NetworkCommands.ContainsKey(command))
                 {
-                    Action<ulong, string, object> action = NetworkCommands[command];
+                    Action<ulong, string, byte[]> action = NetworkCommands[command];
 
                     if (action != null)
                     {
@@ -141,7 +141,7 @@ namespace ModNetworkAPI
         /// </summary>
         /// <param name="command">The command that triggers the callback</param>
         /// <param name="callback">The function that runs when a command is recived</param>
-        public void RegisterNetworkCommand(string command, Action<ulong, string, object> callback)
+        public void RegisterNetworkCommand(string command, Action<ulong, string, byte[]> callback)
         {
             if (command == null)
             {
@@ -210,9 +210,9 @@ namespace ModNetworkAPI
         /// </summary>
         /// <param name="commandString">The command word and any arguments delimidated with spaces</param>
         /// <param name="message">Text to be writen in chat</param>
-        /// <param name="data">An object used to send game information</param>
+        /// <param name="data">A serialized object used to send game information</param>
         /// <param name="steamId">A players steam id</param>
-        public abstract void SendCommand(string commandString, string message = null, object data = null, ulong steamId = ulong.MinValue, bool isReliable = true);
+        public abstract void SendCommand(string commandString, string message = null, byte[] data = null, ulong steamId = ulong.MinValue, bool isReliable = true);
 
         /// <summary>
         /// 

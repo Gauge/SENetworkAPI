@@ -19,12 +19,12 @@ namespace ModNetworkAPI
         {
         }
 
-        public override void SendCommand(string commandString, string message = null, object data = null, ulong steamId = ulong.MinValue, bool isReliable = true)
+        public override void SendCommand(string commandString, string message = null, byte[] data = null, ulong steamId = ulong.MinValue, bool isReliable = true)
         {
             SendCommand(new Command() { SteamId = steamId, CommandString = commandString, Message = message, Data = data }, steamId, isReliable);
         }
 
-        public void SendCommandTo(ulong[] steamIds, string commandString, string message = null, object data = null, bool isReliable = true)
+        public void SendCommandTo(ulong[] steamIds, string commandString, string message = null, byte[] data = null, bool isReliable = true)
         {
             foreach (ulong id in steamIds)
             {
@@ -32,17 +32,12 @@ namespace ModNetworkAPI
             }
         }
 
-        public void SendCommandToPlayersInRange(Vector3D point, string commandString, string message = null, object data = null, bool isReliable = true)
-        {
-            //(MyMultiplayerBase)MyAPIGateway.Multiplayer
-        }
-
-        public void SendCommandToPlayersInRange(Vector3D point, long radius, string commandString, string message = null, object data = null, bool isReliable = true)
+        public void SendCommandToPlayersInRange(Vector3D point, long radius, string commandString, string message = null, byte[] data = null, bool isReliable = true)
         {
             SendCommandToPlayersInRange(new BoundingSphereD(point, radius), commandString, message, data, isReliable);
         }
 
-        public void SendCommandToPlayersInRange(BoundingSphereD sphere, string commandString, string message = null, object data = null, bool isReliable = true)
+        public void SendCommandToPlayersInRange(BoundingSphereD sphere, string commandString, string message = null, byte[] data = null, bool isReliable = true)
         {
             List<IMyPlayer> players = new List<IMyPlayer>();
             MyAPIGateway.Players.GetPlayers(players, (p) => p.Controller?.ControlledEntity?.Entity != null && p.Controller.ControlledEntity.Entity.GetIntersectionWithSphere(ref sphere));
@@ -66,15 +61,15 @@ namespace ModNetworkAPI
                 MyAPIGateway.Utilities.ShowMessage(ModName, cmd.Message);
             }
 
-            byte[] data = ((object)cmd) as byte[];
+            byte[] packet = MyAPIGateway.Utilities.SerializeToBinary(cmd);
 
             if (steamId == ulong.MinValue)
             {
-                MyAPIGateway.Multiplayer.SendMessageToOthers(ComId, data, isReliable);
+                MyAPIGateway.Multiplayer.SendMessageToOthers(ComId, packet, isReliable);
             }
             else
             {
-                MyAPIGateway.Multiplayer.SendMessageTo(ComId, data, steamId, isReliable);
+                MyAPIGateway.Multiplayer.SendMessageTo(ComId, packet, steamId, isReliable);
             }
         }
     }
