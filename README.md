@@ -1,10 +1,12 @@
 ## Overview
 
-The ModNetworkAPI is a neat, robust rapper that sets up and handles data trafficing between the client and server instances of your mod. The module is designed to be entirely plug and play with vary little inital setup cost.
+The ModNetworkAPI is a neat, robust rapper for Space Engineers mods. Designed to be plug and play, the ModNetworkAPI has very little setup overhead.
 
 ## Example
 
 ```cs
+using ModNetworkAPI;
+
 private NetworkAPI Network => NetworkAPI.Instance; // readability
 
 public override void Init(MyObjectBuilder_SessionComponent sessionComponent)
@@ -46,3 +48,53 @@ private void ClientCallback(ulong steamId, string commandString, byte[] data)
 }
 
 ```
+
+## Nit and Grit
+
+There are two different types of commands `Network` and `Chat`.
+```cs
+Network.RegisterNetworkCommand();
+Network.RegisterChatCommand();
+```
+
+As seen above. The process of sending a command requires a `CommandString` and a `Callback` method
+```cs
+Network.RegisterNetworkCommand("update", ServerCallback);
+```
+
+### Chat Commands
+
+If a `help` chat command is registered
+```cs
+Network.RegisterChatCommand("help", Chat_Help);
+```
+Then the event will fire when a client enters the following into chat.
+```
+<keyword> help
+```
+All chat commands are delimited with spaces.
+
+### Network Commands
+
+Network commands are much like chat commands. They differ only in that they trigger from network traffic instead of client chat.
+```cs
+Network.SendCommand("update"); // this will trigger the callback method of the reciever.
+```
+
+The `Network.SendCommand()` funciton has a few options
+```cs
+Network.SendCommand("update"); // CommandString
+Network.SendCommand("update", "Hello World"); // A message that will be in clients chat
+Network.SendCommand("update", "Hello World", dataObj); // serialized object data
+```
+The `Network`when runing on the server instance can be cast for more specialized functions
+```
+if (Network.NetworkType != NetworkTypes.Client)
+{
+    Server s = Network as Server;
+    
+    s.SendCommandTo(ulong[] clients, string command, ...)
+    s.SendCommandToPlayersInRange(Vector3D location, float radius, string command, ...)
+}
+```
+
