@@ -16,26 +16,27 @@ namespace ModNetworkAPI
         /// Event triggers apon reciveing data over the network
         /// steamId, command, data
         /// </summary>
-        public event Action<ulong, string, object> OnCommandRecived;
+        public event Action<ulong, string, object> OnCommandRecived = delegate { };
 
         /// <summary>
         /// Event triggers apon client chat input starting with this mods Keyword
         /// </summary>
         [Obsolete("Use NetworkAPI.RegisterCommand to handle input")]
-        public event Action<string> OnTerminalInput;
+        public event Action<string> OnTerminalInput = delegate { };
 
         /// <summary>
         /// returns the type of network user this is: dedicated, server, client
         /// </summary>
         public NetworkTypes NetworkType => GetNetworkType();
 
-        internal ushort ComId;
-        internal string Keyword = null;
-        internal string ModName = null;
+        public readonly ushort ComId;
+        public readonly string Keyword;
+        public readonly string ModName;
 
         internal bool UsingTextCommands => Keyword != null;
 
-        internal Dictionary<string, Action<ulong, string, object>> Commands = new Dictionary<string, Action<ulong, string, object>>();
+        internal Dictionary<string, Action<ulong, string, object>> NetworkCommands = new Dictionary<string, Action<ulong, string, object>>();
+        internal Dictionary<string, Action<string>> ChatCommands = new Dictionary<string, Action<string>>();
 
         /// <summary>
         /// Sets up the event listeners and create a 
@@ -47,18 +48,16 @@ namespace ModNetworkAPI
         {
             ComId = comId;
             ModName = (modName == null) ? string.Empty : modName;
-
-            if (keyword != null)
-            {
-                Keyword = keyword.ToLower();
-            }
-
-            MyAPIGateway.Utilities.MessageEntered += HandleChatInput;
+            Keyword = (keyword != null) ? keyword.ToLower() : null;
 
             if (UsingTextCommands)
             {
-                MyAPIGateway.Multiplayer.RegisterMessageHandler(ComId, HandleIncomingPacket);
+                MyAPIGateway.Utilities.MessageEntered += HandleChatInput;
             }
+
+            MyAPIGateway.Multiplayer.RegisterMessageHandler(ComId, HandleIncomingPacket);
+
+            MyLog.Default.Info($"[NetworkAPI] Initialized. ComId: {ComId} Name: {ModName} Keyword: {Keyword}");
         }
 
         /// <summary>
@@ -68,11 +67,29 @@ namespace ModNetworkAPI
         /// <param name="sendToOthers">should be shown normally in global chat</param>
         private void HandleChatInput(string messageText, ref bool sendToOthers)
         {
-            string[] args = messageText.Split(' ');
-            if (args[0].ToLower() != Keyword) return;
+            string[] args = messageText.ToLower().Split(' ');
+            if (args[0] != Keyword) return;
             sendToOthers = false;
 
-            OnTerminalInput.Invoke(messageText.Substring(Keyword.Length).Trim(' '));
+            string arguments = messageText.Substring(Keyword.Length).Trim(' ');
+            OnTerminalInput.Invoke(arguments);
+
+            // Meh... this is kinda yucky
+            if (args.Length == 1 && ChatCommands.ContainsKey(string.Empty))
+            {
+                ChatCommands[string.Empty].Invoke(string.Empty);
+            }
+            else if (args.Length > 1 && ChatCommands.ContainsKey(args[1]))
+            {
+                ChatCommands[args[1]].Invoke(arguments.Substring(args[1].Length).Trim(' '));
+            }
+            else
+            {
+                if (NetworkType != NetworkTypes.Dedicated)
+                {
+                    MyAPIGateway.Utilities.ShowMessage(ModName, "Command not recognized.");
+                }
+            }
         }
 
         /// <summary>
@@ -102,9 +119,9 @@ namespace ModNetworkAPI
 
                 string command = cmd.CommandString.Split(' ')[0];
 
-                if (Commands.ContainsKey(command))
+                if (NetworkCommands.ContainsKey(command))
                 {
-                    Action<ulong, string, object> action = Commands[command];
+                    Action<ulong, string, object> action = NetworkCommands[command];
 
                     if (action != null)
                     {
@@ -124,7 +141,7 @@ namespace ModNetworkAPI
         /// </summary>
         /// <param name="command">The command that triggers the callback</param>
         /// <param name="callback">The function that runs when a command is recived</param>
-        public void RegisterCommand(string command, Action<ulong, string, object> callback)
+        public void RegisterNetworkCommand(string command, Action<ulong, string, object> callback)
         {
             if (command == null)
             {
@@ -133,23 +150,58 @@ namespace ModNetworkAPI
 
             command = command.ToLower();
 
-            if (Commands.ContainsKey(command))
+            if (NetworkCommands.ContainsKey(command))
             {
-                throw new Exception($"[NetworkAPI] Failed to add the command callback '{command}'. A command with the same name was already added.");
+                throw new Exception($"[NetworkAPI] Failed to add the network command callback '{command}'. A command with the same name was already added.");
             }
 
-            Commands.Add(command, callback);
+            NetworkCommands.Add(command, callback);
         }
 
         /// <summary>
         /// Unregisters a command
         /// </summary>
         /// <param name="command"></param>
-        public void UnregisterCommand(string command)
+        public void UnregisterNetworkCommand(string command)
         {
-            if (Commands.ContainsKey(command))
+            if (NetworkCommands.ContainsKey(command))
             {
-                Commands.Remove(command);
+                NetworkCommands.Remove(command);
+            }
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="command"></param>
+        /// <param name="callback"></param>
+        public void RegisterChatCommand(string command, Action<string> callback)
+        {
+            if (command == null)
+            {
+                command = string.Empty;
+            }
+
+            command = command.ToLower();
+
+            if (ChatCommands.ContainsKey(command))
+            {
+                throw new Exception($"[NetworkAPI] Failed to add the network command callback '{command}'. A command with the same name was already added.");
+            }
+
+            ChatCommands.Add(command, callback);
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="command"></param>
+        /// <param name="callback"></param>
+        public void UnregisterChatCommand(string command, Action<string> callback)
+        {
+            if (ChatCommands.ContainsKey(command))
+            {
+                ChatCommands.Remove(command);
             }
         }
 
@@ -162,13 +214,29 @@ namespace ModNetworkAPI
         /// <param name="steamId">A players steam id</param>
         public abstract void SendCommand(string commandString, string message = null, object data = null, ulong steamId = ulong.MinValue, bool isReliable = true);
 
+        /// <summary>
+        /// 
+        /// </summary>
         public void Close()
         {
             MyLog.Default.Info($"[NetworkAPI] Unregistering communication stream: {ComId}");
-            MyAPIGateway.Utilities.MessageEntered -= HandleChatInput;
             if (UsingTextCommands)
             {
-                MyAPIGateway.Multiplayer.UnregisterMessageHandler(ComId, HandleIncomingPacket);
+                MyAPIGateway.Utilities.MessageEntered -= HandleChatInput;
+            }
+
+            MyAPIGateway.Multiplayer.UnregisterMessageHandler(ComId, HandleIncomingPacket);
+
+        }
+
+        /// <summary>
+        /// Calls Instance.Close()
+        /// </summary>
+        public static void Dispose()
+        {
+            if (IsInitialized)
+            {
+                Instance.Close();
             }
         }
 
