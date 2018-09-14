@@ -17,7 +17,7 @@ public override void Init(MyObjectBuilder_SessionComponent sessionComponent)
         NetworkAPI.Init(ComId, ModName, Keyword);
     }
     
-    // these commands will be executed on both clients and host client
+    // these commands will be executed on both clients and server instances
     Network.RegisterChatCommand(string.Empty, Chat_Help);
     Network.RegisterChatCommand("help", Chat_Help);
     
