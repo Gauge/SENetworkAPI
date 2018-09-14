@@ -1,13 +1,17 @@
 ﻿using Sandbox.ModAPI;
 using System;
+using System.Collections.Generic;
 using VRage.Utils;
 
 namespace ModNetworkAPI
 {
-    public enum MultiplayerTypes { Dedicated, Server, Client, Private }
+    public enum MultiplayerTypes { Dedicated, Server, Client }
 
     public abstract class NetworkAPI
     {
+        public static NetworkAPI Instance = null;
+        public static bool IsInitialized = Instance != null;
+
         MultiplayerTypes MultiplayerType { get; }
 
         /// <summary>
@@ -26,9 +30,11 @@ namespace ModNetworkAPI
         public MultiplayerTypes NetworkType => GetNetworkType();
 
         internal ushort ComId;
-        internal string Keyword;
+        internal string Keyword = null;
 
         internal bool UsingTextCommands => Keyword != null;
+
+        internal Dictionary<string, Action<string, object>> Commands = new Dictionary<string, Action<string, object>>();
 
         /// <summary>
         /// Sets up the event listeners and create a 
@@ -48,7 +54,7 @@ namespace ModNetworkAPI
 
             if (UsingTextCommands)
             {
-                MyAPIGateway.Multiplayer.RegisterMessageHandler(this.ComId, HandleMessage);
+                MyAPIGateway.Multiplayer.RegisterMessageHandler(ComId, HandleMessage);
             }
         }
 
@@ -87,8 +93,41 @@ namespace ModNetworkAPI
             }
         }
 
-        public abstract void SendCommand(string arguments, string message = null, ulong steamId = ulong.MinValue);
-        public abstract void SendCommand(Command cmd, ulong steamId = ulong.MinValue);
+        /// <summary>
+        /// Registers a callback that will fire when the command string is sent
+        /// </summary>
+        /// <param name="command">The command that triggers the callback</param>
+        /// <param name="callback">The function that runs when a command is recived</param>
+        public void RegisterCommand(string command, Action<string, object> callback)
+        {
+            if (Commands.ContainsKey(command))
+            {
+                throw new Exception($"[NetworkAPI] Failed to add the command callback '{command}'. A command with the same name was already added.");
+            }
+
+            Commands.Add(command, callback);
+        }
+
+        /// <summary>
+        /// Unregisters a command
+        /// </summary>
+        /// <param name="command"></param>
+        public void UnregisterCommand(string command)
+        {
+            if (Commands.ContainsKey(command))
+            {
+                Commands.Remove(command);
+            }
+        }
+
+        /// <summary>
+        /// Sends a command packet across the network
+        /// </summary>
+        /// <param name="commandString">The command word and any arguments delimidated with spaces</param>
+        /// <param name="message">Text to be writen in chat</param>
+        /// <param name="data">An object used to send game information</param>
+        /// <param name="steamId">A players steam id</param>
+        public abstract void SendCommand(string commandString, string message = null, object data = null, ulong steamId = ulong.MinValue, bool isReliable = true);
 
         public void Close()
         {
@@ -96,10 +135,33 @@ namespace ModNetworkAPI
             MyAPIGateway.Utilities.MessageEntered -= HandleChatInput;
             if (UsingTextCommands)
             {
-                MyAPIGateway.Multiplayer.UnregisterMessageHandler(this.ComId, HandleMessage);
+                MyAPIGateway.Multiplayer.UnregisterMessageHandler(ComId, HandleMessage);
             }
         }
 
+        /// <summary>
+        /// Initialize
+        /// </summary>
+        /// <param name="comId"></param>
+        /// <param name="keyword"></param>
+        public static void Init(ushort comId, string keyword = null)
+        {
+            if (IsInitialized) return;
+
+            if (GetNetworkType() == MultiplayerTypes.Client)
+            {
+                Instance = new Client(comId, keyword);
+            }
+            else
+            {
+                Instance = new Server(comId, keyword);
+            }
+        }
+
+        /// <summary>
+        /// Finds the type of network system the current instance is running on
+        /// </summary>
+        /// <returns>MultiplayerTypes Enum</returns>
         public static MultiplayerTypes GetNetworkType()
         {
             if (!MyAPIGateway.Multiplayer.IsServer)
