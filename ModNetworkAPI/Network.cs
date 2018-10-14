@@ -16,13 +16,13 @@ namespace ModNetworkAPI
         /// Event triggers apon reciveing data over the network
         /// steamId, command, data
         /// </summary>
-        public event Action<ulong, string, byte[]> OnCommandRecived = delegate { };
+        public event Action<ulong, string, byte[]> OnCommandRecived;
 
         /// <summary>
         /// Event triggers apon client chat input starting with this mods Keyword
         /// </summary>
         [Obsolete("Use NetworkAPI.RegisterCommand to handle input")]
-        public event Action<string> OnTerminalInput = delegate { };
+        public event Action<string> OnTerminalInput;
 
         /// <summary>
         /// returns the type of network user this is: dedicated, server, client
@@ -72,16 +72,16 @@ namespace ModNetworkAPI
             sendToOthers = false;
 
             string arguments = messageText.Substring(Keyword.Length).Trim(' ');
-            OnTerminalInput.Invoke(arguments);
+            OnTerminalInput?.Invoke(arguments);
 
             // Meh... this is kinda yucky
             if (args.Length == 1 && ChatCommands.ContainsKey(string.Empty))
             {
-                ChatCommands[string.Empty].Invoke(string.Empty);
+                ChatCommands[string.Empty]?.Invoke(string.Empty);
             }
             else if (args.Length > 1 && ChatCommands.ContainsKey(args[1]))
             {
-                ChatCommands[args[1]].Invoke(arguments.Substring(args[1].Length).Trim(' '));
+                ChatCommands[args[1]]?.Invoke(arguments.Substring(args[1].Length).Trim(' '));
             }
             else
             {
@@ -109,7 +109,7 @@ namespace ModNetworkAPI
 
                 if (cmd != null)
                 {
-                    OnCommandRecived.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data);
+                    OnCommandRecived?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data);
                 }
 
                 if (cmd.CommandString == null)
@@ -121,12 +121,7 @@ namespace ModNetworkAPI
 
                 if (NetworkCommands.ContainsKey(command))
                 {
-                    Action<ulong, string, byte[]> action = NetworkCommands[command];
-
-                    if (action != null)
-                    {
-                        action.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data);
-                    }
+                    NetworkCommands[command]?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data);
                 }
 
             }
