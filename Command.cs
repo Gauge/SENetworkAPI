@@ -1,4 +1,5 @@
 ﻿using ProtoBuf;
+using System;
 
 namespace ModNetworkAPI
 {
@@ -13,5 +14,8 @@ namespace ModNetworkAPI
         public string Message { get; set; }
         [ProtoMember(4)]
         public byte[] Data { get; set; }
+
+		[ProtoMember(5)]
+		public long GameTime { get; set; }
     }
 }

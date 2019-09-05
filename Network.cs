@@ -16,7 +16,7 @@ namespace ModNetworkAPI
         /// Event triggers apon reciveing data over the network
         /// steamId, command, data
         /// </summary>
-        public event Action<ulong, string, byte[]> OnCommandRecived;
+        public event Action<ulong, string, byte[], DateTime> OnCommandRecived;
 
         /// <summary>
         /// Event triggers apon client chat input starting with this mods Keyword
@@ -35,7 +35,7 @@ namespace ModNetworkAPI
 
         internal bool UsingTextCommands => Keyword != null;
 
-        internal Dictionary<string, Action<ulong, string, byte[]>> NetworkCommands = new Dictionary<string, Action<ulong, string, byte[]>>();
+        internal Dictionary<string, Action<ulong, string, byte[], DateTime>> NetworkCommands = new Dictionary<string, Action<ulong, string, byte[], DateTime>>();
         internal Dictionary<string, Action<string>> ChatCommands = new Dictionary<string, Action<string>>();
 
         /// <summary>
@@ -109,7 +109,7 @@ namespace ModNetworkAPI
 
                 if (cmd != null)
                 {
-                    OnCommandRecived?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data);
+                    OnCommandRecived?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data, new DateTime(cmd.GameTime));
                 }
 
                 if (cmd.CommandString == null)
@@ -121,7 +121,7 @@ namespace ModNetworkAPI
 
                 if (NetworkCommands.ContainsKey(command))
                 {
-                    NetworkCommands[command]?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data);
+                    NetworkCommands[command]?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data, new DateTime(cmd.GameTime));
                 }
 
             }
@@ -136,7 +136,7 @@ namespace ModNetworkAPI
         /// </summary>
         /// <param name="command">The command that triggers the callback</param>
         /// <param name="callback">The function that runs when a command is recived</param>
-        public void RegisterNetworkCommand(string command, Action<ulong, string, byte[]> callback)
+        public void RegisterNetworkCommand(string command, Action<ulong, string, byte[], DateTime> callback)
         {
             if (command == null)
             {

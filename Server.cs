@@ -29,7 +29,7 @@ namespace ModNetworkAPI
         /// <param name="isReliable">Enture delivery of the packet</param>
         public override void SendCommand(string commandString, string message = null, byte[] data = null, ulong steamId = ulong.MinValue, bool isReliable = true)
         {
-            SendCommand(new Command() { SteamId = steamId, CommandString = commandString, Message = message, Data = data }, steamId, isReliable);
+            SendCommand(new Command() { SteamId = steamId, CommandString = commandString, Message = message, Data = data, GameTime = DateTime.UtcNow.Ticks }, steamId, isReliable);
         }
 
         /// <summary>
@@ -44,7 +44,7 @@ namespace ModNetworkAPI
         {
             foreach (ulong id in steamIds)
             {
-                SendCommand(new Command() { SteamId = id, CommandString = commandString, Message = message, Data = data }, id, isReliable);
+                SendCommand(new Command() { SteamId = id, CommandString = commandString, Message = message, Data = data, GameTime = DateTime.UtcNow.Ticks }, id, isReliable);
             }
         }
 
@@ -77,7 +77,7 @@ namespace ModNetworkAPI
 
             foreach (IMyPlayer player in players)
             {
-                SendCommand(new Command() { SteamId = player.SteamUserId, CommandString = commandString, Message = message, Data = data }, player.SteamUserId, isReliable);
+                SendCommand(new Command() { SteamId = player.SteamUserId, CommandString = commandString, Message = message, Data = data, GameTime = DateTime.UtcNow.Ticks }, player.SteamUserId, isReliable);
             }
         }
 

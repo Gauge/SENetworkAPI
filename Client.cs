@@ -1,4 +1,5 @@
 ﻿using Sandbox.ModAPI;
+using System;
 using VRage.Utils;
 
 namespace ModNetworkAPI
@@ -27,7 +28,7 @@ namespace ModNetworkAPI
         {
             if (MyAPIGateway.Session?.Player != null)
             {
-                byte[] packet = MyAPIGateway.Utilities.SerializeToBinary(new Command() { CommandString = commandString, Message = message, Data = data, SteamId = MyAPIGateway.Session.Player.SteamUserId });
+                byte[] packet = MyAPIGateway.Utilities.SerializeToBinary(new Command() { CommandString = commandString, Message = message, Data = data, GameTime = DateTime.UtcNow.Ticks, SteamId = MyAPIGateway.Session.Player.SteamUserId });
                 MyAPIGateway.Multiplayer.SendMessageToServer(ComId, packet, isReliable);
             }
             else
