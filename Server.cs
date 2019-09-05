@@ -25,59 +25,63 @@ namespace ModNetworkAPI
         /// <param name="commandString">The command to be executed</param>
         /// <param name="message">Text that will be displayed in client chat</param>
         /// <param name="data">A serialized object to be sent across the network</param>
+		/// <param name="sent">The date timestamp this command was sent</param>
         /// <param name="steamId">The client reciving this packet (if 0 it sends to all clients)</param>
         /// <param name="isReliable">Enture delivery of the packet</param>
-        public override void SendCommand(string commandString, string message = null, byte[] data = null, ulong steamId = ulong.MinValue, bool isReliable = true)
+        public override void SendCommand(string commandString, string message = null, byte[] data = null, DateTime? sent = null, ulong steamId = ulong.MinValue, bool isReliable = true)
         {
-            SendCommand(new Command() { SteamId = steamId, CommandString = commandString, Message = message, Data = data, GameTime = DateTime.UtcNow.Ticks }, steamId, isReliable);
+            SendCommand(new Command() { SteamId = steamId, CommandString = commandString, Message = message, Data = data, Timestamp = (sent == null) ? DateTime.UtcNow.Ticks : sent.Value.Ticks }, steamId, isReliable);
         }
 
-        /// <summary>
-        /// Sends a command packet to a list of clients
-        /// </summary>
-        /// <param name="steamIds"></param>
-        /// <param name="commandString">The command to be executed</param>
-        /// <param name="message">Text that will be displayed in client chat</param>
-        /// <param name="data">A serialized object to be sent across the network</param>
-        /// <param name="isReliable">Enture delivery of the packet</param>
-        public void SendCommandTo(ulong[] steamIds, string commandString, string message = null, byte[] data = null, bool isReliable = true)
+		/// <summary>
+		/// Sends a command packet to a list of clients
+		/// </summary>
+		/// <param name="steamIds"></param>
+		/// <param name="commandString">The command to be executed</param>
+		/// <param name="message">Text that will be displayed in client chat</param>
+		/// <param name="data">A serialized object to be sent across the network</param>
+		/// <param name="sent">The date timestamp this command was sent</param>
+		/// <param name="isReliable">Enture delivery of the packet</param>
+		public void SendCommandTo(ulong[] steamIds, string commandString, string message = null, byte[] data = null, DateTime? sent = null, bool isReliable = true)
         {
             foreach (ulong id in steamIds)
             {
-                SendCommand(new Command() { SteamId = id, CommandString = commandString, Message = message, Data = data, GameTime = DateTime.UtcNow.Ticks }, id, isReliable);
+                SendCommand(new Command() { SteamId = id, CommandString = commandString, Message = message, Data = data, Timestamp = (sent == null) ? DateTime.UtcNow.Ticks : sent.Value.Ticks }, id, isReliable);
             }
         }
 
-        /// <summary>
-        /// Sends a command packet to all clients withing the sphere
-        /// </summary>
-        /// <param name="point">The center of the sphere</param>
-        /// <param name="radius">the radius of the sphere</param>
-        /// <param name="commandString">The command to be executed</param>
-        /// <param name="message">Text that will be displayed in client chat</param>
-        /// <param name="data">A serialized object to be sent across the network</param>
-        /// <param name="isReliable">Enture delivery of the packet</param>
-        public void SendCommandToPlayersInRange(Vector3D point, float radius, string commandString, string message = null, byte[] data = null, bool isReliable = true)
+		/// <summary>
+		/// Sends a command packet to all clients withing the sphere
+		/// </summary>
+		/// <param name="point">The center of the sphere</param>
+		/// <param name="radius">the radius of the sphere</param>
+		/// <param name="commandString">The command to be executed</param>
+		/// <param name="message">Text that will be displayed in client chat</param>
+		/// <param name="data">A serialized object to be sent across the network</param>
+		/// <param name="sent">The date timestamp this command was sent</param>
+		/// <param name="isReliable">Enture delivery of the packet</param>
+		public void SendCommandToPlayersInRange(Vector3D point, float radius, string commandString, string message = null, byte[] data = null, DateTime? sent = null, bool isReliable = true)
         {
-            SendCommandToPlayersInRange(new BoundingSphereD(point, radius), commandString, message, data, isReliable);
+            SendCommandToPlayersInRange(new BoundingSphereD(point, radius), commandString, message, data, sent, isReliable);
         }
 
-        /// <summary>
-        /// Sends a command packet to all clients withing the sphere
-        /// </summary>
-        /// <param name="sphere"></param>
-        /// <param name="commandString">The command to be executed</param>
-        /// <param name="message">Text that will be displayed in client chat</param>
-        /// <param name="data">A serialized object to be sent across the network</param>
-        /// <param name="isReliable">Enture delivery of the packet</param>
-        public void SendCommandToPlayersInRange(BoundingSphereD sphere, string commandString, string message = null, byte[] data = null, bool isReliable = true)
+		/// <summary>
+		/// Sends a command packet to all clients withing the sphere
+		/// </summary>
+		/// <param name="sphere"></param>
+		/// <param name="commandString">The command to be executed</param>
+		/// <param name="message">Text that will be displayed in client chat</param>
+		/// <param name="data">A serialized object to be sent across the network</param>
+		/// <param name="sent">The date timestamp this command was sent</param>
+		/// <param name="isReliable">Enture delivery of the packet</param>
+		public void SendCommandToPlayersInRange(BoundingSphereD sphere, string commandString, string message = null, byte[] data = null, DateTime? sent = null, bool isReliable = true)
         {
             List<IMyPlayer> players = new List<IMyPlayer>();
             MyAPIGateway.Players.GetPlayers(players, (p) => p.Controller?.ControlledEntity?.Entity != null && p.Controller.ControlledEntity.Entity.GetIntersectionWithSphere(ref sphere));
 
             foreach (IMyPlayer player in players)
             {
-                SendCommand(new Command() { SteamId = player.SteamUserId, CommandString = commandString, Message = message, Data = data, GameTime = DateTime.UtcNow.Ticks }, player.SteamUserId, isReliable);
+                SendCommand(new Command() { SteamId = player.SteamUserId, CommandString = commandString, Message = message, Data = data, Timestamp = (sent == null) ? DateTime.UtcNow.Ticks : sent.Value.Ticks }, player.SteamUserId, isReliable);
             }
         }
 

@@ -16,6 +16,6 @@ namespace ModNetworkAPI
         public byte[] Data { get; set; }
 
 		[ProtoMember(5)]
-		public long GameTime { get; set; }
+		public long Timestamp { get; set; }
     }
 }

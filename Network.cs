@@ -109,7 +109,7 @@ namespace ModNetworkAPI
 
                 if (cmd != null)
                 {
-                    OnCommandRecived?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data, new DateTime(cmd.GameTime));
+                    OnCommandRecived?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data, new DateTime(cmd.Timestamp));
                 }
 
                 if (cmd.CommandString == null)
@@ -121,7 +121,7 @@ namespace ModNetworkAPI
 
                 if (NetworkCommands.ContainsKey(command))
                 {
-                    NetworkCommands[command]?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data, new DateTime(cmd.GameTime));
+                    NetworkCommands[command]?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data, new DateTime(cmd.Timestamp));
                 }
 
             }
@@ -200,14 +200,15 @@ namespace ModNetworkAPI
             }
         }
 
-        /// <summary>
-        /// Sends a command packet across the network
-        /// </summary>
-        /// <param name="commandString">The command word and any arguments delimidated with spaces</param>
-        /// <param name="message">Text to be writen in chat</param>
-        /// <param name="data">A serialized object used to send game information</param>
-        /// <param name="steamId">A players steam id</param>
-        public abstract void SendCommand(string commandString, string message = null, byte[] data = null, ulong steamId = ulong.MinValue, bool isReliable = true);
+		/// <summary>
+		/// Sends a command packet across the network
+		/// </summary>
+		/// <param name="commandString">The command word and any arguments delimidated with spaces</param>
+		/// <param name="message">Text to be writen in chat</param>
+		/// <param name="data">A serialized object used to send game information</param>
+		/// <param name="sent">The date timestamp this command was sent</param>
+		/// <param name="steamId">A players steam id</param>
+		public abstract void SendCommand(string commandString, string message = null, byte[] data = null, DateTime? sent = null, ulong steamId = ulong.MinValue, bool isReliable = true);
 
         /// <summary>
         /// Unregisters listeners
