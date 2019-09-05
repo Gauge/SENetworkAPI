@@ -269,5 +269,15 @@ namespace ModNetworkAPI
 
             return NetworkTypes.Server;
         }
-    }
+
+		public static double GetDeltaMilliseconds(DateTime date)
+		{
+			return ((double)(DateTime.UtcNow.Ticks - date.Ticks)) / 10000d;
+		}
+
+		public static int GetDeltaFrames(DateTime date)
+		{
+			return (int)Math.Ceiling(((double)(DateTime.UtcNow.Ticks - date.Ticks)) / 600000d);
+		}
+	}
 }
