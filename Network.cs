@@ -278,7 +278,7 @@ namespace ModNetworkAPI
 
 		public static int GetDeltaFrames(DateTime date)
 		{
-			return (int)Math.Ceiling(((double)(DateTime.UtcNow.Ticks - date.Ticks)) / 600000d);
+			return (int)Math.Ceiling(((double)(DateTime.UtcNow.Ticks - date.Ticks)) / 600d);
 		}
 	}
 }
