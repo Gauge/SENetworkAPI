@@ -27,7 +27,7 @@ namespace ModNetworkAPI
         /// <summary>
         /// returns the type of network user this is: dedicated, server, client
         /// </summary>
-        public NetworkTypes NetworkType => GetNetworkType();
+        public static NetworkTypes NetworkType => GetNetworkType();
 
         public readonly ushort ComId;
         public readonly string Keyword;
@@ -271,14 +271,24 @@ namespace ModNetworkAPI
             return NetworkTypes.Server;
         }
 
+		/// <summary>
+		/// Gets the diffrence between now and a given date in milliseconds
+		/// </summary>
+		/// <param name="date"></param>
+		/// <returns></returns>
 		public static double GetDeltaMilliseconds(DateTime date)
 		{
 			return ((double)(DateTime.UtcNow.Ticks - date.Ticks)) / 10000d;
 		}
 
+		/// <summary>
+		/// Gets the diffrence between now and a given date in frames (60 fps)
+		/// </summary>
+		/// <param name="date"></param>
+		/// <returns></returns>
 		public static int GetDeltaFrames(DateTime date)
 		{
-			return (int)Math.Ceiling(((double)(DateTime.UtcNow.Ticks - date.Ticks)) / 600d);
+			return (int)Math.Ceiling(((double)(DateTime.UtcNow.Ticks - date.Ticks)) * 60 / 10000000d);
 		}
 	}
 }
