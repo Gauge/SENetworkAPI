@@ -7,12 +7,12 @@ using VRage.Game.Components;
 using VRage.ModAPI;
 using VRage.Utils;
 
-namespace ModNetworkAPI
+namespace SENetworkAPI
 {
 	public enum TransferType { ServerToClient, ClientToServer, Both }
 
 	[ProtoContract]
-	public class PropertyData
+	public class SyncData
 	{
 		[ProtoMember(1)]
 		public long EntityId;
@@ -22,12 +22,32 @@ namespace ModNetworkAPI
 		public int PropertyId;
 		[ProtoMember(4)]
 		public byte[] data;
+		[ProtoMember(5)]
+		public bool Fetch;
 	}
 
 	public interface IProperty
 	{
+		/// <summary>
+		/// The automatically assigned id
+		/// </summary>
 		int Id { get; }
+
+		/// <summary>
+		/// deserializes data, sets it and triggers the network event
+		/// </summary>
+		/// <param name="data"></param>
 		void SetValue(byte[] data);
+
+		/// <summary>
+		/// requests server info (client only)
+		/// </summary>
+		void Fetch();
+
+		/// <summary>
+		/// Sends the current value across the network (use with object when setting their property values)
+		/// </summary>
+		void Push();
 	}
 
 	public class NetSync<T> : IProperty
@@ -38,12 +58,7 @@ namespace ModNetworkAPI
 		public Action<T> ValueChanged;
 		public Action<T> ValueChangedByNetwork;
 
-		//private bool IsLogicComponent => LogicComponent != null;
-
 		private MyNetworkAPIGameLogicComponent LogicComponent { get; set; }
-		//private MyNetworkAPISessionComponent SessionComponent { get; set; }
-
-
 
 		private T value;
 		public T Value
@@ -76,33 +91,32 @@ namespace ModNetworkAPI
 			}
 		}
 
-		public NetSync(MyNetworkAPIGameLogicComponent logic, TransferType tt)
+		public NetSync(MyNetworkAPIGameLogicComponent logic, TransferType tt, T startingValue = default(T))
 		{
 			LogicComponent = logic;
 			TransferType = tt;
+			value = startingValue;
 
 			Id = logic.AddNetworkProperty(this);
 		}
 
-		//public NetSync(MyNetworkAPISessionComponent session, TransferType tt)
-		//{
-		//	SessionComponent = session;
-		//	TransferType = tt;
-
-		//	Id = session.AddNetworkProperty(this);
-		//}
-
-		private void SendValue()
+		private void SendValue(bool fetch = false)
 		{
-			PropertyData data = new PropertyData() {
+			SyncData data = new SyncData() {
 				EntityId = LogicComponent.Entity.EntityId,
 				LogicType = LogicComponent.GetType().ToString(),
 				PropertyId = Id,
-				data = MyAPIGateway.Utilities.SerializeToBinary(value)
+				data = MyAPIGateway.Utilities.SerializeToBinary(value),
+				Fetch = fetch
 			};
+
+			if (NetworkAPI.IsInitialized)
+			{
+				NetworkAPI.Instance.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data) });
+			}
 		}
 
-		private static void RouteMessage(PropertyData pack)
+		internal static void RouteMessage(SyncData pack)
 		{
 			try
 			{
@@ -129,8 +143,14 @@ namespace ModNetworkAPI
 
 				IProperty property = netComp.GetNetworkProperty(pack.PropertyId);
 
-				property.SetValue(pack.data);
-
+				if (pack.Fetch)
+				{
+					property.Push();
+				}
+				else
+				{
+					property.SetValue(pack.data);
+				}
 			}
 			catch (Exception e)
 			{
@@ -140,46 +160,26 @@ namespace ModNetworkAPI
 
 		public void SetValue(byte[] data)
 		{
-			switch (Type.GetTypeCode(typeof(T)))
+			try
 			{
-				case TypeCode.Boolean:
-					(this as NetSync<bool>).Value = MyAPIGateway.Utilities.SerializeFromBinary<bool>(data);
-					break;
-				case TypeCode.Int32:
-					(this as NetSync<int>).Value = MyAPIGateway.Utilities.SerializeFromBinary<int>(data);
-					break;
-				case TypeCode.Int64:
-					(this as NetSync<long>).Value = MyAPIGateway.Utilities.SerializeFromBinary<long>(data);
-					break;
-				case TypeCode.Double:
-					(this as NetSync<double>).Value = MyAPIGateway.Utilities.SerializeFromBinary<double>(data);
-					break;
-				case TypeCode.Single:
-					(this as NetSync<float>).Value = MyAPIGateway.Utilities.SerializeFromBinary<float>(data);
-					break;
-				case TypeCode.String:
-					(this as NetSync<string>).Value = MyAPIGateway.Utilities.SerializeFromBinary<string>(data);
-					break;
-				case TypeCode.Int16:
-					(this as NetSync<short>).Value = MyAPIGateway.Utilities.SerializeFromBinary<short>(data);
-					break;
-				case TypeCode.Char:
-					(this as NetSync<char>).Value = MyAPIGateway.Utilities.SerializeFromBinary<char>(data);
-					break;
-				case TypeCode.UInt32:
-					(this as NetSync<uint>).Value = MyAPIGateway.Utilities.SerializeFromBinary<uint>(data);
-					break;
-				case TypeCode.UInt64:
-					(this as NetSync<ulong>).Value = MyAPIGateway.Utilities.SerializeFromBinary<ulong>(data);
-					break;
-				case TypeCode.UInt16:
-					(this as NetSync<ushort>).Value = MyAPIGateway.Utilities.SerializeFromBinary<ushort>(data);
-					break;
-				default:
-					throw new Exception($"[NetworkAPI] The property type send is not supported: {Type.GetTypeCode(typeof(T))}");
-			}
+				Value = MyAPIGateway.Utilities.SerializeFromBinary<T>(data);
 
-			ValueChangedByNetwork?.Invoke(value);
+				ValueChangedByNetwork?.Invoke(value);
+			}
+			catch (Exception e)
+			{
+				MyLog.Default.Error($"[NetworkAPI] Failed to deserialize network property data\n{e.ToString()}");
+			}
+		}
+
+		public void Fetch()
+		{
+			SendValue(true);
+		}
+
+		public void Push()
+		{
+			SendValue();
 		}
 	}
 
@@ -201,20 +201,4 @@ namespace ModNetworkAPI
 			return NetworkProperties[i];
 		}
 	}
-
-	//public class MyNetworkAPISessionComponent : MySessionComponentBase
-	//{
-	//	private List<IProperty> NetworkProperties = new List<IProperty>();
-
-	//	public int AddNetworkProperty(IProperty property)
-	//	{
-	//		NetworkProperties.Add(property);
-	//		return NetworkProperties.Count - 1;
-	//	}
-
-	//	public IProperty GetNetworkProperty(int i)
-	//	{
-	//		return NetworkProperties[i];
-	//	}
-	//}
 }

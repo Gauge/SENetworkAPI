@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using VRage.Utils;
 
-namespace ModNetworkAPI
+namespace SENetworkAPI
 {
     public enum NetworkTypes { Dedicated, Server, Client }
 
@@ -102,28 +102,34 @@ namespace ModNetworkAPI
             {
                 Command cmd = MyAPIGateway.Utilities.SerializeFromBinary<Command>(msg);
 
-                if (!string.IsNullOrWhiteSpace(cmd.Message) && NetworkType == NetworkTypes.Client && MyAPIGateway.Session != null)
-                {
-                    MyAPIGateway.Utilities.ShowMessage(ModName, cmd.Message);
-                }
+				if (cmd.IsProperty)
+				{
+					NetSync<object>.RouteMessage(MyAPIGateway.Utilities.SerializeFromBinary<SyncData>(cmd.Data));
+				}
+				else
+				{
+					if (!string.IsNullOrWhiteSpace(cmd.Message) && NetworkType == NetworkTypes.Client && MyAPIGateway.Session != null)
+					{
+						MyAPIGateway.Utilities.ShowMessage(ModName, cmd.Message);
+					}
 
-                if (cmd != null)
-                {
-                    OnCommandRecived?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data, new DateTime(cmd.Timestamp));
-                }
+					if (cmd != null)
+					{
+						OnCommandRecived?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data, new DateTime(cmd.Timestamp));
+					}
 
-                if (cmd.CommandString == null)
-                {
-                    cmd.CommandString = string.Empty;
-                }
+					if (cmd.CommandString == null)
+					{
+						cmd.CommandString = string.Empty;
+					}
 
-                string command = cmd.CommandString.Split(' ')[0];
+					string command = cmd.CommandString.Split(' ')[0];
 
-                if (NetworkCommands.ContainsKey(command))
-                {
-                    NetworkCommands[command]?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data, new DateTime(cmd.Timestamp));
-                }
-
+					if (NetworkCommands.ContainsKey(command))
+					{
+						NetworkCommands[command]?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data, new DateTime(cmd.Timestamp));
+					}
+				}
             }
             catch (Exception e)
             {
@@ -210,10 +216,17 @@ namespace ModNetworkAPI
 		/// <param name="steamId">A players steam id</param>
 		public abstract void SendCommand(string commandString, string message = null, byte[] data = null, DateTime? sent = null, ulong steamId = ulong.MinValue, bool isReliable = true);
 
-        /// <summary>
-        /// Unregisters listeners
-        /// </summary>
-        public void Close()
+		/// <summary>
+		/// Sends a command packet to the server
+		/// </summary>
+		/// <param name="cmd">The object to be sent to the client</param>
+		internal abstract void SendCommand(Command cmd, ulong steamId = ulong.MinValue, bool isReliable = true);
+
+
+			/// <summary>
+			/// Unregisters listeners
+			/// </summary>
+			public void Close()
         {
             MyLog.Default.Info($"[NetworkAPI] Unregistering communication stream: {ComId}");
             if (UsingTextCommands)

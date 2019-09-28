@@ -1,12 +1,10 @@
-﻿using Sandbox.Engine.Multiplayer;
-using Sandbox.ModAPI;
+﻿using Sandbox.ModAPI;
 using System;
 using System.Collections.Generic;
 using VRage.Game.ModAPI;
-using VRage.Utils;
 using VRageMath;
 
-namespace ModNetworkAPI
+namespace SENetworkAPI
 {
     public class Server : NetworkAPI
     {
@@ -90,7 +88,7 @@ namespace ModNetworkAPI
         /// </summary>
         /// <param name="cmd">The object to be sent to the client</param>
         /// <param name="steamId">The players steam id</param>
-        private void SendCommand(Command cmd, ulong steamId = ulong.MinValue, bool isReliable = true)
+        internal override void SendCommand(Command cmd, ulong steamId = ulong.MinValue, bool isReliable = true)
         {
             if (!string.IsNullOrWhiteSpace(cmd.Message) && NetworkType == NetworkTypes.Server && MyAPIGateway.Session != null)
             {

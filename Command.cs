@@ -1,7 +1,6 @@
 ﻿using ProtoBuf;
-using System;
 
-namespace ModNetworkAPI
+namespace SENetworkAPI
 {
     [ProtoContract]
     internal class Command
@@ -14,8 +13,9 @@ namespace ModNetworkAPI
         public string Message { get; set; }
         [ProtoMember(4)]
         public byte[] Data { get; set; }
-
 		[ProtoMember(5)]
 		public long Timestamp { get; set; }
+		[ProtoMember(6)]
+		public bool IsProperty { get; set; }
     }
 }
