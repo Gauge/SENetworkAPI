@@ -33,7 +33,7 @@ namespace SENetworkAPI
 		/// </summary>
 		int Id { get; }
 
-		bool SyncOnStart { get; }
+		bool SyncOnLoad { get; }
 
 		/// <summary>
 		/// deserializes data, sets it and triggers the network event
@@ -56,7 +56,7 @@ namespace SENetworkAPI
 	{
 		public int Id { get; private set; }
 
-		public bool SyncOnStart { get; private set; }
+		public bool SyncOnLoad { get; private set; }
 
 		/// <summary>
 		/// The allowed network communication direction
@@ -115,18 +115,18 @@ namespace SENetworkAPI
 		/// A dynamically syncing object. Used best with block terminal properties
 		/// Make sure to initialize this as a class level variable
 		/// </summary>
-		public NetSync(MyNetworkAPIGameLogicComponent logic, TransferType transferType, T startingValue = default(T), bool fetchDataOnLoad = false)
+		public NetSync(MyNetworkAPIGameLogicComponent logic, TransferType transferType, T startingValue = default(T), bool syncOnLoad = true)
 		{
 			LogicComponent = logic;
 			TransferType = transferType;
 			value = startingValue;
-			SyncOnStart = fetchDataOnLoad;
+			SyncOnLoad = !syncOnLoad;
 
 			Id = logic.AddNetworkProperty(this);
 
 			if (NetworkAPI.LogNetworkTraffic)
 			{
-				MyLog.Default.Info($"[NetworkAPI] Property Created - ID: {Id} Type: {transferType.ToString()} Sync On Start: {SyncOnStart} Logic Class: {logic.GetType().ToString()}");
+				MyLog.Default.Info($"[NetworkAPI] Property Created - ID: {Id} Type: {transferType.ToString()} Sync On Start: {SyncOnLoad} Logic Class: {logic.GetType().ToString()}");
 			}
 
 		}
@@ -319,7 +319,7 @@ namespace SENetworkAPI
 
 			if (!MyAPIGateway.Session.IsServer && SessionReadyCheck())
 			{
-				SyncOnStart();
+				SyncOnLoad();
 			}
 		}
 
@@ -327,24 +327,24 @@ namespace SENetworkAPI
 		{
 			if (!SessionTools.Ready)
 			{
-				MyAPIGateway.Session.OnSessionReady += ready;
+				MyAPIGateway.Session.OnSessionReady += Ready;
 			}
 
 			return SessionTools.Ready;
 		}
 
-		private void ready()
+		private void Ready()
 		{
-			MyAPIGateway.Session.OnSessionReady -= ready;
-			SyncOnStart();
+			MyAPIGateway.Session.OnSessionReady -= Ready;
+			SyncOnLoad();
 
 		}
 
-		private void SyncOnStart()
+		private void SyncOnLoad()
 		{
 			foreach (IProperty prop in NetworkProperties)
 			{
-				if (prop.SyncOnStart)
+				if (prop.SyncOnLoad)
 				{
 					prop.Fetch();
 				}
