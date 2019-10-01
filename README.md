@@ -1,59 +1,114 @@
 ## Overview
 
-The ModNetworkAPI is a neat, robust rapper for Space Engineers mods. Designed to be plug and play, the ModNetworkAPI has very little setup overhead.
+The Space Engineers NetworkAPI is a neat, robust rapper for Space Engineers mods. Designed to be plug and play, the NetworkAPI has very little setup overhead.
 
 To see this beeing used in a real world scenario check out: https://github.com/Gauge/RelativeTopSpeed
 
-## Example
+## Example Properties
 
 ```cs
-using ModNetworkAPI;
+using SENetworkAPI;
 
-private NetworkAPI Network => NetworkAPI.Instance; // readability
-
-public override void Init(MyObjectBuilder_SessionComponent sessionComponent)
+[MyEntityComponentDescriptor(typeof(MyObjectBuilder_UpgradeModule), true, "ANewModBlock")]
+public class ANewModBlock : MyNetworkAPIGameLogicComponent
 {
-    // Its recommended to check the initialized state in all classes using NetworkAPI
-    if (!NetworkAPI.IsInitialized) 
+    // declare properties
+    NetSync<bool> isActive;
+
+    public override void Init(MyObjectBuilder_EntityBase objectBuilder)
     {
-        NetworkAPI.Init(ComId, ModName, Keyword);
+        // It's recommended to check the initialized state in all classes
+        if (!NetworkAPI.IsInitialized) 
+        {
+            NetworkAPI.Init(ComId, ModName, Keyword);
+        }
+        
+        // initialize
+        isActive = new NetSync<bool>(this, TransferType.Both, false);
     }
     
-    // these commands will be executed on both clients and server instances
-    Network.RegisterChatCommand(string.Empty, Chat_Help);
-    Network.RegisterChatCommand("help", Chat_Help);
-    
-    if (Network.NetworkType == NetworkTypes.Client)
+    public override void UpdateOnceBeforeFrame()
     {
-        Network.RegisterNetworkCommand(null, ClientCallback);
-        Network.RegisterChatCommand("update", (arg) => { Network.SendCommand("update"); });
-    }
-    else
-    {
-        Network.RegisterNetworkCommand("update", ServerCallback);
+        if (/* some logic */) 
+        {
+            isActive.Value = true; // syncs new value across the network
+        }
     }
 }
 
-private void Chat_Help(string arguments)
-{
-    MyAPIGateway.Utilities.ShowMessage(Network.ModName, "This is a useful help message");
-}
+```
 
-private void ServerCallback(ulong steamId, string commandString, byte[] data)
-{
-    Network.SendCommand(null, data: MyAPIGateway.Utilities.SerializeToBinary(cfg), steamId: steamId);
-}
+## Example Network Blob
 
-private void ClientCallback(ulong steamId, string commandString, byte[] data)
+```cs
+using SENetworkAPI;
+
+[MySessionComponentDescriptor(MyUpdateOrder.NoUpdate)]
+public class ANewSessionMod : MySessionComponentBase
 {
-  cfg = MyAPIGateway.Utilities.SerializeFromBinary<Config>(data);
+    private NetworkAPI Network => NetworkAPI.Instance; // readability
+
+    public override void Init(MyObjectBuilder_SessionComponent sessionComponent)
+    {
+        // Its recommended to check the initialized state in all classes using NetworkAPI
+        if (!NetworkAPI.IsInitialized) 
+        {
+            NetworkAPI.Init(ComId, ModName, Keyword);
+        }
+
+        // these commands will be executed on both clients and server instances
+        Network.RegisterChatCommand(string.Empty, Chat_Help);
+        Network.RegisterChatCommand("help", Chat_Help);
+
+        if (Network.NetworkType == NetworkTypes.Client)
+        {
+            Network.RegisterNetworkCommand(null, ClientCallback);
+            Network.RegisterChatCommand("update", (arg) => { Network.SendCommand("update"); });
+        }
+        else
+        {
+            Network.RegisterNetworkCommand("update", ServerCallback);
+        }
+    }
+
+    private void Chat_Help(string arguments)
+    {
+        MyAPIGateway.Utilities.ShowMessage(Network.ModName, "This is a useful help message");
+    }
+
+    private void ServerCallback(ulong steamId, string commandString, byte[] data)
+    {
+        Network.SendCommand(null, data: MyAPIGateway.Utilities.SerializeToBinary(cfg), steamId: steamId);
+    }
+
+    private void ClientCallback(ulong steamId, string commandString, byte[] data)
+    {
+      cfg = MyAPIGateway.Utilities.SerializeFromBinary<Config>(data);
+    }
 }
 
 ```
 
 ## Nit and Grit
 
-There are two different types of commands `Network` and `Chat`.
+Properties only work for block mods. Just repalce the inherited `MyGameLogicComponent` with `MyNetworkAPIGameLogicComponent`
+
+```cs
+public class ANewModBlock : MyNetworkAPIGameLogicComponent
+{
+}
+```
+
+From there handling the `NetSync<>` object is similar to a standard variable. There are a few function that can be called.
+
+```cs
+void Fetch() // requests the active value from server
+void Push(ulong steamid) // syncs the current value manually
+Action<oldval, newval> ValueChanged // triggers any time the value changes
+Action<oldval, newval> ValueChangedByNetwork // triggers when receives an update from the network
+```
+
+Network blobs have two different types of commands `Network` and `Chat`.
 ```cs
 Network.RegisterNetworkCommand();
 Network.RegisterChatCommand();
