@@ -34,7 +34,7 @@ namespace SENetworkAPI
 			}
 			else
 			{
-				MyLog.Default.Warning($"[NetworkAPI] ComID:{ComId} | Failed to send command. Session does not exist.");
+				MyLog.Default.Warning($"[NetworkAPI] ComID: {ComId} | Failed to send command. Session does not exist.");
 			}
 		}
 

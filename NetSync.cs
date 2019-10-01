@@ -1,8 +1,8 @@
 ﻿using ProtoBuf;
-using Sandbox.Game.Entities;
 using Sandbox.ModAPI;
 using System;
 using System.Collections.Generic;
+using VRage.Game;
 using VRage.Game.Components;
 using VRage.ModAPI;
 using VRage.Utils;
@@ -12,7 +12,7 @@ namespace SENetworkAPI
 	public enum TransferType { ServerToClient, ClientToServer, Both }
 
 	[ProtoContract]
-	public class SyncData
+	internal class SyncData
 	{
 		[ProtoMember(1)]
 		public long EntityId;
@@ -23,7 +23,7 @@ namespace SENetworkAPI
 		[ProtoMember(4)]
 		public byte[] data;
 		[ProtoMember(5)]
-		public bool Fetch;
+		public ulong Fetch;
 	}
 
 	public interface IProperty
@@ -32,6 +32,8 @@ namespace SENetworkAPI
 		/// The automatically assigned id
 		/// </summary>
 		int Id { get; }
+
+		bool SyncOnStart { get; }
 
 		/// <summary>
 		/// deserializes data, sets it and triggers the network event
@@ -47,36 +49,52 @@ namespace SENetworkAPI
 		/// <summary>
 		/// Sends the current value across the network (use with object when setting their property values)
 		/// </summary>
-		void Push();
+		void Push(ulong sender);
 	}
 
 	public class NetSync<T> : IProperty
 	{
 		public int Id { get; private set; }
+
+		public bool SyncOnStart { get; private set; }
+
+		/// <summary>
+		/// The allowed network communication direction
+		/// </summary>
 		public TransferType TransferType { get; private set; }
 
-		public Action<T> ValueChanged;
-		public Action<T> ValueChangedByNetwork;
+		/// <summary>
+		/// Fires each time the value is changed
+		/// Provides the old value and the new value
+		/// </summary>
+		public Action<T, T> ValueChanged;
 
-		private MyNetworkAPIGameLogicComponent LogicComponent { get; set; }
+		/// <summary>
+		/// Fires only when the a network call is made
+		/// Provides the old value and the new value
+		/// </summary>
+		public Action<T, T> ValueChangedByNetwork;
 
-		private T value;
+		/// <summary>
+		/// this property syncs across the network when changed
+		/// </summary>
 		public T Value
 		{
 			get { return value; }
 			set
 			{
+				T val = this.value;
 				this.value = value;
 				if (TransferType == TransferType.ServerToClient)
 				{
-					if (NetworkAPI.NetworkType == NetworkTypes.Server)
+					if (MyAPIGateway.Multiplayer.IsServer)
 					{
 						SendValue();
 					}
 				}
 				else if (TransferType == TransferType.ClientToServer)
 				{
-					if (NetworkAPI.NetworkType == NetworkTypes.Server)
+					if (!MyAPIGateway.Multiplayer.IsServer)
 					{
 						SendValue();
 					}
@@ -86,22 +104,47 @@ namespace SENetworkAPI
 					SendValue();
 				}
 
-				ValueChanged?.Invoke(value);
-
+				ValueChanged?.Invoke(val, value);
 			}
 		}
 
-		public NetSync(MyNetworkAPIGameLogicComponent logic, TransferType tt, T startingValue = default(T))
+		private T value;
+		private MyNetworkAPIGameLogicComponent LogicComponent;
+
+		/// <summary>
+		/// A dynamically syncing object. Used best with block terminal properties
+		/// Make sure to initialize this as a class level variable
+		/// </summary>
+		public NetSync(MyNetworkAPIGameLogicComponent logic, TransferType transferType, T startingValue = default(T), bool fetchDataOnLoad = false)
 		{
 			LogicComponent = logic;
-			TransferType = tt;
+			TransferType = transferType;
 			value = startingValue;
+			SyncOnStart = fetchDataOnLoad;
 
 			Id = logic.AddNetworkProperty(this);
+
+			if (NetworkAPI.LogNetworkTraffic)
+			{
+				MyLog.Default.Info($"[NetworkAPI] Property Created - ID: {Id} Type: {transferType.ToString()} Sync On Start: {SyncOnStart} Logic Class: {logic.GetType().ToString()}");
+			}
+
 		}
 
-		private void SendValue(bool fetch = false)
+		/// <summary>
+		/// sends the value across the network
+		/// </summary>
+		/// <param name="fetch"></param>
+		private void SendValue(ulong fetch = ulong.MinValue, ulong sendTo = ulong.MinValue)
 		{
+			if (fetch != ulong.MinValue && MyAPIGateway.Multiplayer.IsServer)
+				return;
+
+			if (NetworkAPI.LogNetworkTraffic)
+			{
+				MyLog.Default.Info($"[NetworkAPI] TRANSMITTING: {Value}{((sendTo != ulong.MinValue) ? $" TO USER: {sendTo}" : "")}");
+			}
+
 			SyncData data = new SyncData() {
 				EntityId = LogicComponent.Entity.EntityId,
 				LogicType = LogicComponent.GetType().ToString(),
@@ -110,16 +153,30 @@ namespace SENetworkAPI
 				Fetch = fetch
 			};
 
-			if (NetworkAPI.IsInitialized)
+			if (LogicComponent.Network != null)
 			{
-				NetworkAPI.Instance.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data) });
+				LogicComponent.Network.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data) }, sendTo);
 			}
 		}
 
+		/// <summary>
+		/// receives and processes all property changes
+		/// </summary>
+		/// <param name="pack">this hold the path to the property and the data to sync</param>
 		internal static void RouteMessage(SyncData pack)
 		{
 			try
 			{
+				if (pack == null)
+				{
+					throw new Exception("Property date is null");
+				}
+
+				if (NetworkAPI.LogNetworkTraffic)
+				{
+					MyLog.Default.Info($"[NetworkAPI] Received {(pack.Fetch != ulong.MinValue ? "FETCH" : "POST")} request");
+				}
+
 				IMyEntity entity = MyAPIGateway.Entities.GetEntityById(pack.EntityId);
 
 				if (entity == null)
@@ -127,25 +184,23 @@ namespace SENetworkAPI
 					throw new Exception("Could not locate game entity");
 				}
 
-				MyGameLogicComponent logic = (entity.GameLogic as MyCompositeGameLogicComponent).GetAs(pack.LogicType);
+				MyNetworkAPIGameLogicComponent netLogic = entity.GameLogic as MyNetworkAPIGameLogicComponent;
 
-				if (logic == null)
-				{
-					throw new Exception("Didn't find a game component of specified class type");
-				}
-
-				MyNetworkAPIGameLogicComponent netComp = logic as MyNetworkAPIGameLogicComponent;
-
-				if (netComp == null)
+				if (netLogic == null)
 				{
 					throw new Exception("The inherited \"MyGameLogicComponent\" needs to be replaced with \"MyNetworkAPIGameLogicComponent\"");
 				}
 
-				IProperty property = netComp.GetNetworkProperty(pack.PropertyId);
+				IProperty property = netLogic.GetNetworkProperty(pack.PropertyId);
 
-				if (pack.Fetch)
+				if (property == null)
 				{
-					property.Push();
+					throw new Exception("Property return null");
+				}
+
+				if (pack.Fetch != ulong.MinValue)
+				{
+					property.Push(pack.Fetch);
 				}
 				else
 				{
@@ -154,17 +209,29 @@ namespace SENetworkAPI
 			}
 			catch (Exception e)
 			{
-				MyLog.Default.Error($"[NetworkAPI] Entity: {pack.EntityId} - Class: {pack.LogicType} - Property: {pack.PropertyId}: Failed to route data \n{e.ToString()}");
+				MyLog.Default.Error($"[NetworkAPI] Entity: {pack.EntityId} - Property ID: {pack.PropertyId} - Class: {pack.LogicType}: Failed to route data \n{e.ToString()}");
 			}
 		}
 
+		/// <summary>
+		/// This function is ment to only be triggered internally 
+		/// Bad things will happen if used
+		/// </summary>
+		/// <param name="data"></param>
 		public void SetValue(byte[] data)
 		{
 			try
 			{
-				Value = MyAPIGateway.Utilities.SerializeFromBinary<T>(data);
+				T val = value;
+				value = MyAPIGateway.Utilities.SerializeFromBinary<T>(data);
 
-				ValueChangedByNetwork?.Invoke(value);
+				if (NetworkAPI.LogNetworkTraffic)
+				{
+					MyLog.Default.Info($"[NetworkAPI] new value: {value} --- old value: {value}");
+				}
+
+				ValueChanged?.Invoke(val, value);
+				ValueChangedByNetwork?.Invoke(val, value);
 			}
 			catch (Exception e)
 			{
@@ -172,22 +239,58 @@ namespace SENetworkAPI
 			}
 		}
 
+		/// <summary>
+		/// Forces a network sync.
+		/// This call is only made by clients
+		/// </summary>
 		public void Fetch()
 		{
-			SendValue(true);
+			if (!MyAPIGateway.Multiplayer.IsServer)
+			{
+				if (MyAPIGateway.Session?.Player != null)
+				{
+					SendValue(MyAPIGateway.Session.Player.SteamUserId);
+				}
+				else
+				{
+					MyLog.Default.Error($"[NetworkAPI] Could not fetch property data. No player entity");
+				}
+			}
+
 		}
 
-		public void Push()
+		/// <summary>
+		/// Broadcast an update
+		/// </summary>
+		public void Push(ulong sender = ulong.MinValue)
 		{
-			SendValue();
+			SendValue(sendTo: sender);
+		}
+	}
+
+	[MySessionComponentDescriptor(MyUpdateOrder.NoUpdate)]
+	public class SessionTools : MySessionComponentBase
+	{
+		public static bool Ready { get; private set; }
+
+		public override void Init(MyObjectBuilder_SessionComponent sessionComponent)
+		{
+			MyAPIGateway.Session.OnSessionReady += OnReady;
+		}
+
+		private void OnReady()
+		{
+			Ready = true;
+			MyAPIGateway.Session.OnSessionReady -= OnReady;
 		}
 	}
 
 	/// <summary>
-	/// This class should be used inplace of MyGameLogicComponent for all block mods that have network properties
+	/// Use as a replacement for MyGameLogicComponent
 	/// </summary>
 	public class MyNetworkAPIGameLogicComponent : MyGameLogicComponent
 	{
+		public NetworkAPI Network => NetworkAPI.Instance;
 		private List<IProperty> NetworkProperties = new List<IProperty>();
 
 		public int AddNetworkProperty(IProperty property)
@@ -199,6 +302,53 @@ namespace SENetworkAPI
 		public IProperty GetNetworkProperty(int i)
 		{
 			return NetworkProperties[i];
+		}
+
+		public MyNetworkAPIGameLogicComponent()
+		{
+			if (!MyAPIGateway.Session.IsServer)
+				SessionReadyCheck();
+		}
+
+		/// <summary>
+		/// Be sure to call base.OnAddedToScene(); within this function
+		/// </summary>
+		public override void OnAddedToScene()
+		{
+			base.OnAddedToScene();
+
+			if (!MyAPIGateway.Session.IsServer && SessionReadyCheck())
+			{
+				SyncOnStart();
+			}
+		}
+
+		private bool SessionReadyCheck()
+		{
+			if (!SessionTools.Ready)
+			{
+				MyAPIGateway.Session.OnSessionReady += ready;
+			}
+
+			return SessionTools.Ready;
+		}
+
+		private void ready()
+		{
+			MyAPIGateway.Session.OnSessionReady -= ready;
+			SyncOnStart();
+
+		}
+
+		private void SyncOnStart()
+		{
+			foreach (IProperty prop in NetworkProperties)
+			{
+				if (prop.SyncOnStart)
+				{
+					prop.Fetch();
+				}
+			}
 		}
 	}
 }
