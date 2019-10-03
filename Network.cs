@@ -99,7 +99,7 @@ namespace SENetworkAPI
 
 				if (cmd.IsProperty)
 				{
-					NetSync<object>.RouteMessage(MyAPIGateway.Utilities.SerializeFromBinary<SyncData>(cmd.Data));
+					NetSync<object>.RouteMessage(MyAPIGateway.Utilities.SerializeFromBinary<SyncData>(cmd.Data), cmd.SteamId);
 				}
 				else
 				{
