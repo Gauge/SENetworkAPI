@@ -46,7 +46,7 @@ namespace SENetworkAPI
 
 		internal abstract void Push(SyncType type, ulong sendTo);
 
-		internal abstract void SetNetworkValue(byte[] data);
+		internal abstract void SetNetworkValue(byte[] data, ulong sender);
 	}
 
 	public class NetSync<T> : NetSync
@@ -65,8 +65,9 @@ namespace SENetworkAPI
 		/// <summary>
 		/// Fires only when the a network call is made
 		/// Provides the old value and the new value
+		/// also provides the steamId
 		/// </summary>
-		public Action<T, T> ValueChangedByNetwork;
+		public Action<T, T, ulong> ValueChangedByNetwork;
 
 		/// <summary>
 		/// this property syncs across the network when changed
@@ -135,7 +136,7 @@ namespace SENetworkAPI
 		/// <summary>
 		/// Sets the data received over the network
 		/// </summary>
-		internal override void SetNetworkValue(byte[] data)
+		internal override void SetNetworkValue(byte[] data, ulong sender)
 		{
 			try
 			{
@@ -148,7 +149,7 @@ namespace SENetworkAPI
 				}
 
 				ValueChanged?.Invoke(val, _value);
-				ValueChangedByNetwork?.Invoke(val, _value);
+				ValueChangedByNetwork?.Invoke(val, _value, sender);
 			}
 			catch (Exception e)
 			{
@@ -238,7 +239,7 @@ namespace SENetworkAPI
 				}
 				else
 				{
-					property.SetNetworkValue(pack.Data);
+					property.SetNetworkValue(pack.Data, sender);
 				}
 			}
 			catch (Exception e)
@@ -261,6 +262,14 @@ namespace SENetworkAPI
 		public void Push()
 		{
 			SendValue();
+		}
+
+		/// <summary>
+		/// Send data to single user
+		/// </summary>
+		public void Push(ulong sendTo)
+		{
+			SendValue(SyncType.Post, sendTo);
 		}
 
 		/// <summary>
