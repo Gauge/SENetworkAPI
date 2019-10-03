@@ -99,7 +99,7 @@ public class ANewModBlock : MyNetworkAPIGameLogicComponent
 }
 ```
 
-From there handling the `NetSync<>` object is similar to a standard variable. There are a few function that can be called.
+From there handling the `NetSync<>` object is similar to a standard variable. Assigning `NetSync<>.Value` will sync between client and server. Also here are some built in tools.
 
 ```cs
 void Fetch() // requests the active value from server
