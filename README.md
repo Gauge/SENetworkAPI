@@ -103,7 +103,8 @@ From there handling the `NetSync<>` object is similar to a standard variable. As
 
 ```cs
 void Fetch() // requests the active value from server
-void Push(ulong steamid) // syncs the current value manually
+void Push() // syncs the current value manually
+void SetValue(value, SyncType) // allows you to set the value without syncing and more
 Action<oldval, newval> ValueChanged // triggers any time the value changes
 Action<oldval, newval> ValueChangedByNetwork // triggers when receives an update from the network
 ```
