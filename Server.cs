@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using VRage.Game.ModAPI;
+using VRage.Utils;
 using VRageMath;
 
 namespace SENetworkAPI
@@ -96,6 +97,11 @@ namespace SENetworkAPI
 			}
 
 			byte[] packet = MyAPIGateway.Utilities.SerializeToBinary(cmd);
+
+			if (LogNetworkTraffic)
+			{
+				MyLog.Default.Info($"[NetworkAPI] TRANSMITTING Bytes: {packet.Length}  Command: {cmd.CommandString}  User: {steamId}");
+			}
 
 			if (steamId == ulong.MinValue)
 			{

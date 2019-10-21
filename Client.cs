@@ -30,6 +30,12 @@ namespace SENetworkAPI
 			if (MyAPIGateway.Session?.Player != null)
 			{
 				byte[] packet = MyAPIGateway.Utilities.SerializeToBinary(new Command() { CommandString = commandString, Message = message, Data = data, Timestamp = (sent == null) ? DateTime.UtcNow.Ticks : sent.Value.Ticks, SteamId = MyAPIGateway.Session.Player.SteamUserId });
+
+				if (LogNetworkTraffic)
+				{
+					MyLog.Default.Info($"[NetworkAPI] TRANSMITTING Bytes: {packet.Length}  Command: {commandString}  User: {steamId}");
+				}
+
 				MyAPIGateway.Multiplayer.SendMessageToServer(ComId, packet, isReliable);
 			}
 			else
@@ -45,6 +51,12 @@ namespace SENetworkAPI
 		internal override void SendCommand(Command cmd, ulong steamId = ulong.MinValue, bool isReliable = true)
 		{
 			byte[] packet = MyAPIGateway.Utilities.SerializeToBinary(cmd);
+
+			if (LogNetworkTraffic)
+			{
+				MyLog.Default.Info($"[NetworkAPI] TRANSMITTING Bytes: {packet.Length}  Command: {cmd.CommandString}  User: {steamId}");
+			}
+
 			MyAPIGateway.Multiplayer.SendMessageToServer(ComId, packet, isReliable);
 		}
 	}
