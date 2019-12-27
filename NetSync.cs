@@ -225,7 +225,7 @@ namespace SENetworkAPI
 					throw new Exception("Could not locate game entity");
 				}
 
-				MyNetworkAPIGameLogicComponent netLogic = entity.GameLogic as MyNetworkAPIGameLogicComponent;
+				MyNetworkAPIGameLogicComponent netLogic = entity.GameLogic.GetAs<MyNetworkAPIGameLogicComponent>();
 
 				if (netLogic == null)
 				{
