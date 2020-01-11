@@ -77,10 +77,7 @@ namespace SENetworkAPI
 			get { return _value; }
 			set
 			{
-				if (!value.Equals(_value))
-				{
-					SetValue(value, SyncType.Broadcast);
-				}
+				SetValue(value, SyncType.Broadcast);
 			}
 		}
 
@@ -102,18 +99,9 @@ namespace SENetworkAPI
 
 			if (NetworkAPI.LogNetworkTraffic)
 			{
-				MyLog.Default.Info($"[NetworkAPI] Property Created - ID: {Id}, Type: {transferType.ToString()}, Sync On Start: {SyncOnLoad}, Logic Class: {logic.GetType().ToString()}, EntityId: {logic.Entity.EntityId}");
+				MyLog.Default.Info($"[NetworkAPI] Property Created - ID: {Id} Type: {transferType.ToString()} Sync On Start: {SyncOnLoad} Logic Class: {logic.GetType().ToString()}");
 			}
-		}
 
-		public static bool operator == (NetSync<T> property, T val)
-		{
-			return property.Value.Equals(val);
-		}
-
-		public static bool operator != (NetSync<T> property, T val)
-		{
-			return !property.Value.Equals(val);
 		}
 
 		/// <summary>
@@ -121,28 +109,31 @@ namespace SENetworkAPI
 		/// </summary>
 		public void SetValue(T val, SyncType syncType)
 		{
-			T oldval = _value;
-			_value = val;
-			if (TransferType == TransferType.ServerToClient)
+			lock (_value)
 			{
-				if (MyAPIGateway.Multiplayer.IsServer)
+				T oldval = _value;
+				_value = val;
+				if (TransferType == TransferType.ServerToClient)
+				{
+					if (MyAPIGateway.Multiplayer.IsServer)
+					{
+						SendValue(syncType);
+					}
+				}
+				else if (TransferType == TransferType.ClientToServer)
+				{
+					if (!MyAPIGateway.Multiplayer.IsServer)
+					{
+						SendValue(syncType);
+					}
+				}
+				else if (TransferType == TransferType.Both)
 				{
 					SendValue(syncType);
 				}
-			}
-			else if (TransferType == TransferType.ClientToServer)
-			{
-				if (!MyAPIGateway.Multiplayer.IsServer)
-				{
-					SendValue(syncType);
-				}
-			}
-			else if (TransferType == TransferType.Both)
-			{
-				SendValue(syncType);
-			}
 
-			ValueChanged?.Invoke(oldval, val);
+				ValueChanged?.Invoke(oldval, val);
+			}
 		}
 
 		/// <summary>
@@ -152,16 +143,19 @@ namespace SENetworkAPI
 		{
 			try
 			{
-				T val = _value;
-				_value = MyAPIGateway.Utilities.SerializeFromBinary<T>(data);
-
-				if (NetworkAPI.LogNetworkTraffic)
+				lock (_value)
 				{
-					MyLog.Default.Info($"[NetworkAPI] New value: {_value}, Old value: {_value} - <Sender: {sender}, EntityId: {LogicComponent.Entity.EntityId}, EntityName: {LogicComponent.Entity.GetFriendlyName()}, Type: {LogicComponent.GetType().ToString()}, PropertyType: {typeof(T).ToString()}, PropertyIndex: {Id}>");
-				}
+					T val = _value;
+					_value = MyAPIGateway.Utilities.SerializeFromBinary<T>(data);
 
-				ValueChanged?.Invoke(val, _value);
-				ValueChangedByNetwork?.Invoke(val, _value, sender);
+					if (NetworkAPI.LogNetworkTraffic)
+					{
+						MyLog.Default.Info($"[NetworkAPI] <{LogicComponent.GetType().ToString()} - {Id}> New value: {_value} --- Old value: {_value}");
+					}
+
+					ValueChanged?.Invoke(val, _value);
+					ValueChangedByNetwork?.Invoke(val, _value, sender);
+				}
 			}
 			catch (Exception e)
 			{
@@ -176,11 +170,6 @@ namespace SENetworkAPI
 		private void SendValue(SyncType syncType = SyncType.Broadcast, ulong sendTo = ulong.MinValue)
 		{
 
-			if (syncType == SyncType.None) 
-			{
-				return;
-			}
-			
 			if (Value == null)
 			{
 				MyLog.Default.Error($"[NetworkAPI] ID: {Id} Type: {typeof(T)} Value is null. Cannot transmit null value.");
@@ -189,18 +178,18 @@ namespace SENetworkAPI
 
 			if (MyAPIGateway.Multiplayer.IsServer)
 			{
-				if (syncType == SyncType.Fetch)
+				if (syncType == SyncType.None || syncType == SyncType.Fetch)
 					return;
 
 				if (syncType == SyncType.Post && sendTo == ulong.MinValue && NetworkAPI.LogNetworkTraffic)
 				{
-					MyLog.Default.Error($"[NetworkAPI] Sync Type is POST but the recipient is missing. Sending message as Broadcast - <EntityId: {LogicComponent.Entity.EntityId}, EntityName: {LogicComponent.Entity.GetFriendlyName()}, Type: {LogicComponent.GetType().ToString()}, PropertyType: {typeof(T).ToString()}, PropertyIndex: {Id}>");
+					MyLog.Default.Error($"[NetworkAPI] <{LogicComponent.GetType().ToString()} - {Id}> Sync Type is POST but the recipient is missing. Sending message as Broadcast.");
 				}
 			}
 
 			if (NetworkAPI.LogNetworkTraffic)
 			{
-				MyLog.Default.Info($"[NetworkAPI] TRANSMITTING: Sync Type: {syncType.ToString()} Value: {Value.ToString()} - <EntityId: {LogicComponent.Entity.EntityId}, EntityName: {LogicComponent.Entity.GetFriendlyName()}, Type: {LogicComponent.GetType().ToString()}, PropertyType: {typeof(T).ToString()}, PropertyIndex: {Id}>");
+				MyLog.Default.Info($"[NetworkAPI] TRANSMITTING: Sync Type: {syncType.ToString()} Value: {Value.ToString()}");
 			}
 
 			SyncData data = new SyncData() {
@@ -302,7 +291,6 @@ namespace SENetworkAPI
 		{
 			SendValue(type, sendTo);
 		}
-
 
 	}
 
