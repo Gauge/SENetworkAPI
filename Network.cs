@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using VRage.Utils;
+using VRageMath;
 
 namespace SENetworkAPI
 {
@@ -211,10 +212,23 @@ namespace SENetworkAPI
 		public abstract void SendCommand(string commandString, string message = null, byte[] data = null, DateTime? sent = null, ulong steamId = ulong.MinValue, bool isReliable = true);
 
 		/// <summary>
-		/// Sends a command packet to the server
+		/// Sends a command packet to the server / client
 		/// </summary>
-		/// <param name="cmd">The object to be sent to the client</param>
+		/// <param name="cmd">The object to be sent across the network</param>
+		/// <param name="steamId">the id of the user this is being sent to. 0 sends it to all users in range</param>
+		/// <param name="isReliable">make sure the packet reaches its destination</param>
 		internal abstract void SendCommand(Command cmd, ulong steamId = ulong.MinValue, bool isReliable = true);
+
+
+		/// <summary>
+		/// Sends a command packet to the server / client if in range
+		/// </summary>
+		/// <param name="cmd">The object to be sent across the network</param>
+		/// <param name="point">the center of the sending sphere</param>
+		/// <param name="range">the radius of the sending sphere</param>
+		/// <param name="steamId">the id of the user this is being sent to. 0 sends it to all users in range</param>
+		/// <param name="isReliable">make sure the packet reaches its destination</param>
+		internal abstract void SendCommand(Command cmd, Vector3D point, double range = 0, ulong steamId = ulong.MinValue, bool isReliable = true);
 
 		/// <summary>
 		/// Unregisters listeners

@@ -1,6 +1,7 @@
 ﻿using Sandbox.ModAPI;
 using System;
 using VRage.Utils;
+using VRageMath;
 
 namespace SENetworkAPI
 {
@@ -58,6 +59,11 @@ namespace SENetworkAPI
 			}
 
 			MyAPIGateway.Multiplayer.SendMessageToServer(ComId, packet, isReliable);
+		}
+
+		internal override void SendCommand(Command cmd, Vector3D point, double range = 0, ulong steamId = 0, bool isReliable = true)
+		{
+			SendCommand(cmd, steamId, isReliable);
 		}
 	}
 }

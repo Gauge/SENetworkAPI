@@ -50,41 +50,6 @@ namespace SENetworkAPI
 		}
 
 		/// <summary>
-		/// Sends a command packet to all clients withing the sphere
-		/// </summary>
-		/// <param name="point">The center of the sphere</param>
-		/// <param name="radius">the radius of the sphere</param>
-		/// <param name="commandString">The command to be executed</param>
-		/// <param name="message">Text that will be displayed in client chat</param>
-		/// <param name="data">A serialized object to be sent across the network</param>
-		/// <param name="sent">The date timestamp this command was sent</param>
-		/// <param name="isReliable">Enture delivery of the packet</param>
-		public void SendCommandToPlayersInRange(Vector3D point, float radius, string commandString, string message = null, byte[] data = null, DateTime? sent = null, bool isReliable = true)
-		{
-			SendCommandToPlayersInRange(new BoundingSphereD(point, radius), commandString, message, data, sent, isReliable);
-		}
-
-		/// <summary>
-		/// Sends a command packet to all clients withing the sphere
-		/// </summary>
-		/// <param name="sphere"></param>
-		/// <param name="commandString">The command to be executed</param>
-		/// <param name="message">Text that will be displayed in client chat</param>
-		/// <param name="data">A serialized object to be sent across the network</param>
-		/// <param name="sent">The date timestamp this command was sent</param>
-		/// <param name="isReliable">Enture delivery of the packet</param>
-		public void SendCommandToPlayersInRange(BoundingSphereD sphere, string commandString, string message = null, byte[] data = null, DateTime? sent = null, bool isReliable = true)
-		{
-			List<IMyPlayer> players = new List<IMyPlayer>();
-			MyAPIGateway.Players.GetPlayers(players, (p) => p.Controller?.ControlledEntity?.Entity != null && p.Controller.ControlledEntity.Entity.GetIntersectionWithSphere(ref sphere));
-
-			foreach (IMyPlayer player in players)
-			{
-				SendCommand(new Command() { SteamId = player.SteamUserId, CommandString = commandString, Message = message, Data = data, Timestamp = (sent == null) ? DateTime.UtcNow.Ticks : sent.Value.Ticks }, player.SteamUserId, isReliable);
-			}
-		}
-
-		/// <summary>
 		/// Sends a command packet to the client(s)
 		/// </summary>
 		/// <param name="cmd">The object to be sent to the client</param>
@@ -110,6 +75,42 @@ namespace SENetworkAPI
 			else
 			{
 				MyAPIGateway.Multiplayer.SendMessageTo(ComId, packet, steamId, isReliable);
+			}
+		}
+
+		internal override void SendCommand(Command cmd, Vector3D point, double radius = 0, ulong steamId = ulong.MinValue, bool isReliable = true)
+		{
+			if (radius == 0)
+			{
+				radius = MyAPIGateway.Session.SessionSettings.SyncDistance;
+			}
+
+			List<IMyPlayer> players = new List<IMyPlayer>();
+			if (steamId == ulong.MinValue)
+			{
+				MyAPIGateway.Players.GetPlayers(players, (p) => (p.GetPosition() - point).LengthSquared() < (radius * radius));
+			}
+			else
+			{
+				MyAPIGateway.Players.GetPlayers(players, p => p.SteamUserId == steamId);
+			}
+
+			if (!string.IsNullOrWhiteSpace(cmd.Message) && MyAPIGateway.Multiplayer.IsServer && MyAPIGateway.Session != null)
+			{
+				MyAPIGateway.Utilities.ShowMessage(ModName, cmd.Message);
+			}
+
+			byte[] packet = MyAPIGateway.Utilities.SerializeToBinary(cmd);
+
+			if (LogNetworkTraffic)
+			{
+				MyLog.Default.Info($"[NetworkAPI] TRANSMITTING Bytes: {packet.Length}  Command: {cmd.CommandString}  To: {players.Count} Users");
+			}
+
+			foreach (IMyPlayer player in players)
+			{
+				cmd.SteamId = player.SteamUserId;
+				MyAPIGateway.Multiplayer.SendMessageTo(ComId, packet, player.SteamUserId, isReliable);
 			}
 		}
 	}
