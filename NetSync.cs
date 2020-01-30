@@ -129,7 +129,13 @@ namespace SENetworkAPI
 				}
 				else if (TransferType == TransferType.Both)
 				{
-					SendValue(syncType);
+					ulong id = ulong.MinValue;
+					if (MyAPIGateway.Session?.LocalHumanPlayer != null)
+					{
+						id = MyAPIGateway.Session.LocalHumanPlayer.SteamUserId;
+					}
+
+					SendValue(syncType, id);
 				}
 
 				ValueChanged?.Invoke(oldval, val);
@@ -265,7 +271,13 @@ namespace SENetworkAPI
 		/// </summary>
 		public override void Fetch()
 		{
-			SendValue(SyncType.Fetch);
+			ulong id = ulong.MinValue;
+			if (MyAPIGateway.Session?.LocalHumanPlayer != null)
+			{
+				id = MyAPIGateway.Session.LocalHumanPlayer.SteamUserId;
+			}
+
+			SendValue(SyncType.Fetch, id);
 		}
 
 		/// <summary>
