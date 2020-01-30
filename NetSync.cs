@@ -243,7 +243,7 @@ namespace SENetworkAPI
 
 				if (NetworkAPI.LogNetworkTraffic)
 				{
-					MyLog.Default.Info($"[NetworkAPI] Received {pack.SyncType.ToString()} request");
+					MyLog.Default.Info($"[NetworkAPI] Transmission type: {pack.SyncType.ToString()}");
 				}
 
 				IMyEntity entity = MyAPIGateway.Entities.GetEntityById(pack.EntityId);
