@@ -135,7 +135,7 @@ namespace SENetworkAPI
 					}
 				}
 				else if (TransferType == TransferType.Both)
-				{	
+				{
 					SendValue(syncType);
 				}
 
@@ -157,7 +157,7 @@ namespace SENetworkAPI
 
 					if (NetworkAPI.LogNetworkTraffic)
 					{
-						MyLog.Default.Info($"[NetworkAPI] <{LogicComponent.GetType().ToString()} - {Id}> New value: {_value} --- Old value: {_value}");
+						MyLog.Default.Info($"[NetworkAPI] <{LogicComponent.GetType().ToString()} - {Id}> New value: {val} --- Old value: {_value}");
 					}
 
 					ValueChanged?.Invoke(val, _value);
