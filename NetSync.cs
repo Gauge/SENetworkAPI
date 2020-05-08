@@ -116,31 +116,33 @@ namespace SENetworkAPI
 		/// </summary>
 		public void SetValue(T val, SyncType syncType)
 		{
+			T oldval = _value;
 			lock (_value)
 			{
-				T oldval = _value;
 				_value = val;
-				if (TransferType == TransferType.ServerToClient)
-				{
-					if (MyAPIGateway.Multiplayer.IsServer)
-					{
-						SendValue(syncType);
-					}
-				}
-				else if (TransferType == TransferType.ClientToServer)
-				{
-					if (!MyAPIGateway.Multiplayer.IsServer)
-					{
-						SendValue(syncType);
-					}
-				}
-				else if (TransferType == TransferType.Both)
+			}
+
+			if (TransferType == TransferType.ServerToClient)
+			{
+				if (MyAPIGateway.Multiplayer.IsServer)
 				{
 					SendValue(syncType);
 				}
-
-				ValueChanged?.Invoke(oldval, val);
 			}
+			else if (TransferType == TransferType.ClientToServer)
+			{
+				if (!MyAPIGateway.Multiplayer.IsServer)
+				{
+					SendValue(syncType);
+				}
+			}
+			else if (TransferType == TransferType.Both)
+			{
+				SendValue(syncType);
+			}
+
+			ValueChanged?.Invoke(oldval, val);
+
 		}
 
 		/// <summary>
@@ -176,7 +178,8 @@ namespace SENetworkAPI
 		/// <param name="fetch"></param>
 		private void SendValue(SyncType syncType = SyncType.Broadcast, ulong sendTo = ulong.MinValue)
 		{
-			if (MyAPIGateway.Session.OnlineMode == MyOnlineModeEnum.OFFLINE)
+			if (MyAPIGateway.Session.OnlineMode == MyOnlineModeEnum.OFFLINE ||
+				syncType == SyncType.None)
 				return;
 
 			if (Value == null)
@@ -187,7 +190,7 @@ namespace SENetworkAPI
 
 			if (MyAPIGateway.Multiplayer.IsServer)
 			{
-				if (syncType == SyncType.None || syncType == SyncType.Fetch)
+				if (syncType == SyncType.Fetch)
 					return;
 
 				if (syncType == SyncType.Post && sendTo == ulong.MinValue && NetworkAPI.LogNetworkTraffic)
