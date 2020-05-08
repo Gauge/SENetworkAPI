@@ -17,5 +17,7 @@ namespace SENetworkAPI
 		public long Timestamp { get; set; }
 		[ProtoMember(6)]
 		public bool IsProperty { get; set; }
+        [ProtoMember(7)]
+        public bool IsCompressed { get; set; }
     }
 }

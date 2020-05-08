@@ -1,6 +1,7 @@
 ﻿using Sandbox.ModAPI;
 using System;
 using System.Collections.Generic;
+using VRage;
 using VRage.Utils;
 using VRageMath;
 
@@ -13,6 +14,7 @@ namespace SENetworkAPI
 		public static NetworkAPI Instance = null;
 		public static bool IsInitialized = Instance != null;
 		public static bool LogNetworkTraffic = false;
+		public const int CompressionThreshold = 100000;
 
 		/// <summary>
 		/// Event triggers apon reciveing data over the network
@@ -95,7 +97,13 @@ namespace SENetworkAPI
 
 				if (LogNetworkTraffic)
 				{
-					MyLog.Default.Info($"[NetworkAPI] Received Transmission: From: {cmd.SteamId} Type: {((cmd.IsProperty) ? "Property" : $"Command ID: {cmd.CommandString}")}");
+					MyLog.Default.Info($"[NetworkAPI] Received{(cmd.IsCompressed ? " Compressed" : "")} Transmission: From: {cmd.SteamId} Type: {((cmd.IsProperty) ? "Property" : $"Command ID: {cmd.CommandString}")}");
+				}
+
+				if (cmd.IsCompressed)
+				{
+					cmd.Data = MyCompression.Decompress(cmd.Data);
+					cmd.IsCompressed = false;
 				}
 
 				if (cmd.IsProperty)
@@ -209,7 +217,21 @@ namespace SENetworkAPI
 		/// <param name="data">A serialized object used to send game information</param>
 		/// <param name="sent">The date timestamp this command was sent</param>
 		/// <param name="steamId">A players steam id</param>
+		/// <param name="isReliable">Makes sure the data gets to the target</param>
 		public abstract void SendCommand(string commandString, string message = null, byte[] data = null, DateTime? sent = null, ulong steamId = ulong.MinValue, bool isReliable = true);
+
+		/// <summary>
+		/// Sends a command packet across the network
+		/// </summary>
+		/// <param name="commandString">The command word and any arguments delimidated with spaces</param>
+		/// <param name="point"></param>
+		/// <param name="radius"></param>
+		/// <param name="message">Text to be writen in chat</param>
+		/// <param name="data">A serialized object used to send game information</param>
+		/// <param name="sent">The date timestamp this command was sent</param>
+		/// <param name="steamId">A players steam id</param>
+		/// <param name="isReliable">Makes sure the data gets to the target</param>
+		public abstract void SendCommand(string commandString, Vector3D point, double radius = 0, string message = null, byte[] data = null, DateTime? sent = null, ulong steamId = ulong.MinValue, bool isReliable = true);
 
 		/// <summary>
 		/// Sends a command packet to the server / client

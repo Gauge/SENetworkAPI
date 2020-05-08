@@ -1,6 +1,7 @@
 ﻿using Sandbox.ModAPI;
 using System;
 using System.Collections.Generic;
+using VRage;
 using VRage.Game.ModAPI;
 using VRage.Utils;
 using VRageMath;
@@ -33,6 +34,22 @@ namespace SENetworkAPI
 		}
 
 		/// <summary>
+		/// 
+		/// </summary>
+		/// <param name="commandString">Sends a command packet to the client(s)</param>
+		/// <param name="point">the center of the sync location</param>
+		/// <param name="radius">the distance the message reaches (defaults to sync distance)</param>
+		/// <param name="message">Text that will be displayed in client chat</param>
+		/// <param name="data">A serialized object to be sent across the network</param>
+		/// <param name="sent">The date timestamp this command was sent</param>
+		/// <param name="steamId">The client reciving this packet (if 0 it sends to all clients)</param>
+		/// <param name="isReliable">Enture delivery of the packet</param>
+		public override void SendCommand(string commandString, Vector3D point, double radius = 0, string message = null, byte[] data = null, DateTime? sent = null, ulong steamId = ulong.MinValue, bool isReliable = true)
+		{
+			SendCommand(new Command() { SteamId = steamId, CommandString = commandString, Message = message, Data = data, Timestamp = (sent == null) ? DateTime.UtcNow.Ticks : sent.Value.Ticks }, point, radius, steamId, isReliable);
+		}
+
+		/// <summary>
 		/// Sends a command packet to a list of clients
 		/// </summary>
 		/// <param name="steamIds"></param>
@@ -54,8 +71,15 @@ namespace SENetworkAPI
 		/// </summary>
 		/// <param name="cmd">The object to be sent to the client</param>
 		/// <param name="steamId">The players steam id</param>
+		/// <param name="isReliable">Make sure the data arrives</param>
 		internal override void SendCommand(Command cmd, ulong steamId = ulong.MinValue, bool isReliable = true)
 		{
+			if (cmd.Data != null && cmd.Data.Length > CompressionThreshold)
+			{
+				cmd.Data = MyCompression.Compress(cmd.Data);
+				cmd.IsCompressed = true;
+			}
+
 			if (!string.IsNullOrWhiteSpace(cmd.Message) && MyAPIGateway.Multiplayer.IsServer && MyAPIGateway.Session != null)
 			{
 				MyAPIGateway.Utilities.ShowMessage(ModName, cmd.Message);
@@ -78,8 +102,22 @@ namespace SENetworkAPI
 			}
 		}
 
+		/// <summary>
+		/// Sends a command packet to the client(s)
+		/// </summary>
+		/// <param name="cmd">The object to be sent to the client</param>
+		/// <param name="point">the center of the sync location</param>
+		/// <param name="radius">the distance the message reaches (defaults to sync distance)</param>
+		/// <param name="steamId">The players steam id</param>
+		/// <param name="isReliable">Make sure the data arrives</param>
 		internal override void SendCommand(Command cmd, Vector3D point, double radius = 0, ulong steamId = ulong.MinValue, bool isReliable = true)
 		{
+			if (cmd.Data != null && cmd.Data.Length > CompressionThreshold)
+			{
+				cmd.Data = MyCompression.Compress(cmd.Data);
+				cmd.IsCompressed = true;
+			}
+
 			if (radius == 0)
 			{
 				radius = MyAPIGateway.Session.SessionSettings.SyncDistance;
