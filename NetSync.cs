@@ -3,7 +3,6 @@ using Sandbox.ModAPI;
 using System;
 using System.Collections.Generic;
 using VRage.Game;
-using VRage.Game.Components;
 using VRage.ModAPI;
 using VRage.Utils;
 
@@ -18,12 +17,14 @@ namespace SENetworkAPI
 		[ProtoMember(1)]
 		public long EntityId;
 		[ProtoMember(2)]
-		public string LogicType;
+		public bool IsGameLogicComponent;
 		[ProtoMember(3)]
-		public int PropertyId;
+		public string ComponentType;
 		[ProtoMember(4)]
-		public byte[] Data;
+		public int PropertyId;
 		[ProtoMember(5)]
+		public byte[] Data;
+		[ProtoMember(6)]
 		public SyncType SyncType;
 	}
 
@@ -87,29 +88,61 @@ namespace SENetworkAPI
 		}
 
 		private T _value;
-		private MyNetworkAPIGameLogicComponent LogicComponent;
+		private MyNetworkGameLogicComponent LogicComponent;
+		private MyNetworkSessionComponent SessionComponent;
+		private bool isLogicComponent => LogicComponent != null;
+		private string componentType;
+
+		private int SessionComponentId;
+		private static List<MyNetworkSessionComponent> SessionComponents = new List<MyNetworkSessionComponent>();
 
 		/// <summary>
 		/// A dynamically syncing object. Used best with block terminal properties
 		/// Make sure to initialize this as a class level variable
 		/// </summary>
-		public NetSync(MyNetworkAPIGameLogicComponent logic, TransferType transferType, T startingValue = default(T), bool enableSync = true, bool limitToSyncDistance = true)
+		public NetSync(MyNetworkGameLogicComponent logic, TransferType transferType, T startingValue = default(T), bool enableSync = true, bool limitToSyncDistance = true)
 		{
 			LogicComponent = logic;
 			TransferType = transferType;
 			_value = startingValue;
 			SyncOnLoad = enableSync;
 			LimitToSyncDistance = limitToSyncDistance;
+			componentType = logic.GetType().ToString();
 
 
 			Id = logic.AddNetworkProperty(this);
 
 			if (NetworkAPI.LogNetworkTraffic)
 			{
-				MyLog.Default.Info($"[NetworkAPI] Property Created - ID: {Id}, Transfer: {transferType.ToString()}, SyncOnStart: {SyncOnLoad}, Type: {typeof(T).ToString()}, Class: {logic.GetType().ToString()}");
+				MyLog.Default.Info($"[NetworkAPI] Property Created - ID: {Id}, Transfer: {transferType}, SyncOnStart: {SyncOnLoad}, Type: {typeof(T)}, Class: {componentType}");
 			}
 
 		}
+
+		public NetSync(MyNetworkSessionComponent session, TransferType transferType, T startingValue = default(T), bool enableSync = true, bool limitToSyncDistance = true)
+		{
+			SessionComponent = session;
+			TransferType = transferType;
+			_value = startingValue;
+			SyncOnLoad = enableSync;
+			LimitToSyncDistance = limitToSyncDistance;
+			componentType = session.GetType().ToString();
+
+			if (!SessionComponents.Contains(session))
+			{
+				SessionComponents.Add(SessionComponent);
+				SessionComponentId = SessionComponents.Count - 1;
+			}
+
+			Id = session.AddNetworkProperty(this);
+
+			if (NetworkAPI.LogNetworkTraffic)
+			{
+				MyLog.Default.Info($"[NetworkAPI] Property Created - ID: {Id}, Transfer: {transferType}, SyncOnStart: {SyncOnLoad}, Type: {typeof(T)}, Class: {componentType}");
+			}
+
+		}
+
 
 		/// <summary>
 		/// Allows you to change how syncing works when setting the value this way
@@ -122,21 +155,9 @@ namespace SENetworkAPI
 				_value = val;
 			}
 
-			if (TransferType == TransferType.ServerToClient)
-			{
-				if (MyAPIGateway.Multiplayer.IsServer)
-				{
-					SendValue(syncType);
-				}
-			}
-			else if (TransferType == TransferType.ClientToServer)
-			{
-				if (!MyAPIGateway.Multiplayer.IsServer)
-				{
-					SendValue(syncType);
-				}
-			}
-			else if (TransferType == TransferType.Both)
+			if ((TransferType == TransferType.ServerToClient && MyAPIGateway.Multiplayer.IsServer) ||
+				(TransferType == TransferType.ClientToServer && !MyAPIGateway.Multiplayer.IsServer) ||
+				TransferType == TransferType.Both)
 			{
 				SendValue(syncType);
 			}
@@ -159,7 +180,7 @@ namespace SENetworkAPI
 
 					if (NetworkAPI.LogNetworkTraffic)
 					{
-						MyLog.Default.Info($"[NetworkAPI] <{LogicComponent.GetType().ToString()} - {Id}> New value: {val} --- Old value: {_value}");
+						MyLog.Default.Info($"[NetworkAPI] <{componentType} - {Id}> New value: {val} --- Old value: {_value}");
 					}
 
 					ValueChanged?.Invoke(val, _value);
@@ -168,7 +189,7 @@ namespace SENetworkAPI
 			}
 			catch (Exception e)
 			{
-				MyLog.Default.Error($"[NetworkAPI] Failed to deserialize network property data\n{e.ToString()}");
+				MyLog.Default.Error($"[NetworkAPI] Failed to deserialize network property data\n{e}");
 			}
 		}
 
@@ -179,6 +200,7 @@ namespace SENetworkAPI
 		private void SendValue(SyncType syncType = SyncType.Broadcast, ulong sendTo = ulong.MinValue)
 		{
 			if (MyAPIGateway.Session.OnlineMode == MyOnlineModeEnum.OFFLINE ||
+				MyAPIGateway.Session.OnlineMode == MyOnlineModeEnum.PRIVATE ||
 				syncType == SyncType.None)
 				return;
 
@@ -193,26 +215,27 @@ namespace SENetworkAPI
 				if (syncType == SyncType.Fetch)
 					return;
 
-				if (syncType == SyncType.Post && sendTo == ulong.MinValue && NetworkAPI.LogNetworkTraffic)
+				if (NetworkAPI.LogNetworkTraffic && syncType == SyncType.Post && sendTo == ulong.MinValue)
 				{
-					MyLog.Default.Error($"[NetworkAPI] <{LogicComponent.GetType().ToString()} - {Id}> Sync Type is POST but the recipient is missing. Sending message as Broadcast.");
+					MyLog.Default.Error($"[NetworkAPI] <{componentType} - {Id}> Sync Type is POST but the recipient is missing. Sending message as Broadcast.");
 				}
 			}
 
 			if (NetworkAPI.LogNetworkTraffic)
 			{
-				MyLog.Default.Info($"[NetworkAPI] TRANSMITTING: Sync Type: {syncType.ToString()} Value: {Value.ToString()}");
+				MyLog.Default.Info($"[NetworkAPI] TRANSMITTING: Sync Type: {syncType} Value: {Value}");
 			}
 
 			SyncData data = new SyncData() {
-				EntityId = LogicComponent.Entity.EntityId,
-				LogicType = LogicComponent.GetType().ToString(),
+				EntityId = (isLogicComponent) ? LogicComponent.Entity.EntityId : SessionComponentId,
+				IsGameLogicComponent = isLogicComponent,
+				ComponentType = componentType,
 				PropertyId = Id,
 				Data = MyAPIGateway.Utilities.SerializeToBinary(_value),
 				SyncType = syncType
 			};
 
-			if (LogicComponent.Network != null)
+			if (NetworkAPI.IsInitialized)
 			{
 				ulong id = ulong.MinValue;
 				if (MyAPIGateway.Session?.LocalHumanPlayer != null)
@@ -220,7 +243,7 @@ namespace SENetworkAPI
 					id = MyAPIGateway.Session.LocalHumanPlayer.SteamUserId;
 				}
 
-				if (LogicComponent.Entity != null)
+				if (isLogicComponent && LogicComponent.Entity != null)
 				{
 					LogicComponent.Network.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data), SteamId = id }, LogicComponent.Entity.GetPosition(), steamId: sendTo);
 				}
@@ -246,42 +269,75 @@ namespace SENetworkAPI
 
 				if (NetworkAPI.LogNetworkTraffic)
 				{
-					MyLog.Default.Info($"[NetworkAPI] Transmission type: {pack.SyncType.ToString()}");
+					MyLog.Default.Info($"[NetworkAPI] Transmission type: {pack.SyncType}");
 				}
 
-				IMyEntity entity = MyAPIGateway.Entities.GetEntityById(pack.EntityId);
-
-				if (entity == null)
+				if (pack.IsGameLogicComponent)
 				{
-					throw new Exception("Could not locate game entity");
-				}
+					IMyEntity entity = MyAPIGateway.Entities.GetEntityById(pack.EntityId);
 
-				MyNetworkAPIGameLogicComponent netLogic = entity.GameLogic.GetAs<MyNetworkAPIGameLogicComponent>();
+					if (entity == null)
+					{
+						throw new Exception("Could not locate game entity");
+					}
 
-				if (netLogic == null)
-				{
-					throw new Exception("The inherited \"MyGameLogicComponent\" needs to be replaced with \"MyNetworkAPIGameLogicComponent\"");
-				}
+					MyNetworkGameLogicComponent netLogic = entity.GameLogic.GetAs<MyNetworkGameLogicComponent>();
 
-				NetSync property = netLogic.GetNetworkProperty(pack.PropertyId);
+					if (netLogic == null)
+					{
+						throw new Exception("The inherited \"MyGameLogicComponent\" needs to be replaced with \"MyNetworkAPIGameLogicComponent\"");
+					}
 
-				if (property == null)
-				{
-					throw new Exception("Property return null");
-				}
+					NetSync property = netLogic.GetNetworkProperty(pack.PropertyId);
 
-				if (pack.SyncType == SyncType.Fetch)
-				{
-					property.Push(SyncType.Post, sender);
+					if (property == null)
+					{
+						throw new Exception("Property return null");
+					}
+
+					if (pack.SyncType == SyncType.Fetch)
+					{
+						property.Push(SyncType.Post, sender);
+					}
+					else
+					{
+						property.SetNetworkValue(pack.Data, sender);
+					}
 				}
 				else
 				{
-					property.SetNetworkValue(pack.Data, sender);
+					if (SessionComponents.Count <= pack.EntityId)
+					{
+						throw new Exception("Could not find Session Component in list");
+					}
+
+					MyNetworkSessionComponent netSession = SessionComponents[(int)pack.EntityId];
+
+					if (netSession == null)
+					{
+						throw new Exception("The Session Component was destoryed and is returning null");
+					}
+
+					NetSync property = netSession.GetNetworkProperty(pack.PropertyId);
+
+					if (property == null)
+					{
+						throw new Exception("Property return null");
+					}
+
+					if (pack.SyncType == SyncType.Fetch)
+					{
+						property.Push(SyncType.Post, sender);
+					}
+					else
+					{
+						property.SetNetworkValue(pack.Data, sender);
+					}
 				}
 			}
 			catch (Exception e)
 			{
-				MyLog.Default.Error($"[NetworkAPI] Entity: {pack.EntityId} - Property ID: {pack.PropertyId} - Class: {pack.LogicType}: Failed to route data \n{e.ToString()}");
+				MyLog.Default.Error($"[NetworkAPI] Entity: {pack.EntityId} - Property ID: {pack.PropertyId} - Class: {pack.ComponentType}: Failed to route data \n{e}");
 			}
 		}
 
@@ -317,89 +373,5 @@ namespace SENetworkAPI
 			SendValue(type, sendTo);
 		}
 
-	}
-
-	[MySessionComponentDescriptor(MyUpdateOrder.NoUpdate)]
-	public class SessionTools : MySessionComponentBase
-	{
-		public static bool Ready { get; private set; }
-
-		public override void Init(MyObjectBuilder_SessionComponent sessionComponent)
-		{
-			MyAPIGateway.Session.OnSessionReady += OnReady;
-		}
-
-		private void OnReady()
-		{
-			Ready = true;
-			MyAPIGateway.Session.OnSessionReady -= OnReady;
-		}
-	}
-
-	/// <summary>
-	/// Use as a replacement for MyGameLogicComponent
-	/// </summary>
-	public class MyNetworkAPIGameLogicComponent : MyGameLogicComponent
-	{
-		public NetworkAPI Network => NetworkAPI.Instance;
-		private List<NetSync> NetworkProperties = new List<NetSync>();
-
-		public int AddNetworkProperty(NetSync property)
-		{
-			NetworkProperties.Add(property);
-			return NetworkProperties.Count - 1;
-		}
-
-		public NetSync GetNetworkProperty(int i)
-		{
-			return NetworkProperties[i];
-		}
-
-		public MyNetworkAPIGameLogicComponent()
-		{
-			if (!MyAPIGateway.Multiplayer.IsServer)
-				SessionReadyCheck();
-		}
-
-		/// <summary>
-		/// Be sure to call base.OnAddedToScene(); within this function
-		/// </summary>
-		public override void OnAddedToScene()
-		{
-			base.OnAddedToScene();
-
-			if (!MyAPIGateway.Multiplayer.IsServer && SessionReadyCheck())
-			{
-				SyncOnLoad();
-			}
-		}
-
-		private bool SessionReadyCheck()
-		{
-			if (!SessionTools.Ready)
-			{
-				MyAPIGateway.Session.OnSessionReady += Ready;
-			}
-
-			return SessionTools.Ready;
-		}
-
-		private void Ready()
-		{
-			MyAPIGateway.Session.OnSessionReady -= Ready;
-			SyncOnLoad();
-
-		}
-
-		private void SyncOnLoad()
-		{
-			foreach (NetSync prop in NetworkProperties)
-			{
-				if (prop.SyncOnLoad)
-				{
-					prop.Fetch();
-				}
-			}
-		}
 	}
 }
