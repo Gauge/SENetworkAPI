@@ -12,7 +12,7 @@ namespace SENetworkAPI
 	public abstract class NetworkAPI
 	{
 		public static NetworkAPI Instance = null;
-		public static bool IsInitialized = Instance != null;
+		public static bool IsInitialized => Instance != null;
 		public static bool LogNetworkTraffic = false;
 		public const int CompressionThreshold = 100000;
 

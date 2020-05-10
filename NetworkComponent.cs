@@ -32,11 +32,6 @@ namespace SENetworkAPI
 		{
 			base.OnAddedToScene();
 
-			//if (NetworkAPI.LogNetworkTraffic)
-			//{
-			//	MyLog.Default.Info($"[NetworkAPI] MyNetworkGameLogicComponent: Component Added to scene with {NetworkProperties.Count} Properties");
-			//}
-
 			if (SessionTools.Ready)
 			{
 				SyncOnLoad();

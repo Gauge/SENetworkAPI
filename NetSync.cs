@@ -263,7 +263,7 @@ namespace SENetworkAPI
 			{
 				if (NetworkAPI.LogNetworkTraffic)
 				{
-					MyLog.Default.Info($"[NetworkAPI] Could not send. Network not initialized.");
+					MyLog.Default.Error($"[NetworkAPI] Could not send. Network not initialized.");
 				}
 			}
 		}
