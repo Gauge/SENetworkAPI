@@ -108,7 +108,7 @@ namespace SENetworkAPI
 
 				if (cmd.IsProperty)
 				{
-					NetSync<object>.RouteMessage(MyAPIGateway.Utilities.SerializeFromBinary<SyncData>(cmd.Data), cmd.SteamId);
+					NetSync<object>.RouteMessage(MyAPIGateway.Utilities.SerializeFromBinary<SyncData>(cmd.Data), cmd.SteamId, cmd.Timestamp);
 				}
 				else
 				{
@@ -299,23 +299,22 @@ namespace SENetworkAPI
 		}
 
 		/// <summary>
-		/// Gets the diffrence between now and a given date in milliseconds
+		/// Gets the diffrence between now and a given timestamp in milliseconds
 		/// </summary>
-		/// <param name="date"></param>
 		/// <returns></returns>
-		public static double GetDeltaMilliseconds(DateTime date)
+		public static float GetDeltaMilliseconds(long timestamp)
 		{
-			return ((double)(DateTime.UtcNow.Ticks - date.Ticks)) / 10000d;
+			return (DateTime.UtcNow.Ticks - timestamp) * 0.0001f;
 		}
 
 		/// <summary>
-		/// Gets the diffrence between now and a given date in frames (60 fps)
+		/// Gets the diffrence between now and a given timestamp in frames (60 fps)
 		/// </summary>
 		/// <param name="date"></param>
 		/// <returns></returns>
-		public static int GetDeltaFrames(DateTime date)
+		public static int GetDeltaFrames(long timestamp)
 		{
-			return (int)Math.Ceiling(((double)(DateTime.UtcNow.Ticks - date.Ticks)) * 60 / 10000000d);
+			return (int)Math.Ceiling((DateTime.UtcNow.Ticks - timestamp) * 0.000006d);
 		}
 	}
 }

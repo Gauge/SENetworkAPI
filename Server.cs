@@ -138,6 +138,7 @@ namespace SENetworkAPI
 				MyAPIGateway.Utilities.ShowMessage(ModName, cmd.Message);
 			}
 
+			cmd.Timestamp = DateTime.UtcNow.Ticks;
 			byte[] packet = MyAPIGateway.Utilities.SerializeToBinary(cmd);
 
 			if (LogNetworkTraffic)
@@ -147,7 +148,6 @@ namespace SENetworkAPI
 
 			foreach (IMyPlayer player in players)
 			{
-				cmd.SteamId = player.SteamUserId;
 				MyAPIGateway.Multiplayer.SendMessageTo(ComId, packet, player.SteamUserId, isReliable);
 			}
 		}

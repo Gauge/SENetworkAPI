@@ -53,6 +53,7 @@ namespace SENetworkAPI
 				cmd.IsCompressed = true;
 			}
 
+			cmd.Timestamp = DateTime.UtcNow.Ticks;
 			byte[] packet = MyAPIGateway.Utilities.SerializeToBinary(cmd);
 
 			if (LogNetworkTraffic)

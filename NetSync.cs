@@ -1,4 +1,5 @@
 ﻿using ProtoBuf;
+using Sandbox.Game.Entities;
 using Sandbox.ModAPI;
 using System;
 using System.Collections.Generic;
@@ -44,6 +45,8 @@ namespace SENetworkAPI
 		/// Limits sync updates to within sync distance
 		/// </summary>
 		public bool LimitToSyncDistance { get; internal set; }
+
+		public long LastMessageTimestamp { get; set; }
 
 		/// <summary>
 		/// Request the lastest value from the server
@@ -119,13 +122,13 @@ namespace SENetworkAPI
 
 		}
 
-		public NetSync(MyNetworkSessionComponent session, TransferType transferType, T startingValue = default(T), bool enableSync = true, bool limitToSyncDistance = true)
+		public NetSync(MyNetworkSessionComponent session, TransferType transferType, T startingValue = default(T), bool enableSync = true)
 		{
 			SessionComponent = session;
 			TransferType = transferType;
 			_value = startingValue;
 			SyncOnLoad = enableSync;
-			LimitToSyncDistance = limitToSyncDistance;
+			LimitToSyncDistance = false;
 			componentType = session.GetType().ToString();
 
 			if (!SessionComponents.Contains(session))
@@ -272,7 +275,7 @@ namespace SENetworkAPI
 		/// Receives and processes all property changes
 		/// </summary>
 		/// <param name="pack">this hold the path to the property and the data to sync</param>
-		internal static void RouteMessage(SyncData pack, ulong sender)
+		internal static void RouteMessage(SyncData pack, ulong sender, long timestamp)
 		{
 			try
 			{
@@ -299,10 +302,11 @@ namespace SENetworkAPI
 
 					if (netLogic == null)
 					{
-						throw new Exception("The inherited \"MyGameLogicComponent\" needs to be replaced with \"MyNetworkAPIGameLogicComponent\"");
+						throw new Exception("The inherited \"MyGameLogicComponent\" needs to be replaced with \"MyNetworkGameLogicComponent\"");
 					}
 
 					NetSync property = netLogic.GetNetworkProperty(pack.PropertyId);
+					property.LastMessageTimestamp = timestamp;
 
 					if (property == null)
 					{
@@ -333,6 +337,7 @@ namespace SENetworkAPI
 					}
 
 					NetSync property = netSession.GetNetworkProperty(pack.PropertyId);
+					property.LastMessageTimestamp = timestamp;
 
 					if (property == null)
 					{
