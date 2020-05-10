@@ -223,7 +223,7 @@ namespace SENetworkAPI
 
 			if (NetworkAPI.LogNetworkTraffic)
 			{
-				MyLog.Default.Info($"[NetworkAPI] TRANSMITTING: Sync Type: {syncType} Value: {Value}");
+				MyLog.Default.Info($"[NetworkAPI] TRANSMITTING: Property: {Id} Sync Type: {syncType} Value: {Value}");
 			}
 
 			SyncData data = new SyncData() {
@@ -243,13 +243,27 @@ namespace SENetworkAPI
 					id = MyAPIGateway.Session.LocalHumanPlayer.SteamUserId;
 				}
 
-				if (isLogicComponent && LogicComponent.Entity != null)
+				if (isLogicComponent)
 				{
-					LogicComponent.Network.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data), SteamId = id }, LogicComponent.Entity.GetPosition(), steamId: sendTo);
+					if (LogicComponent.Entity != null)
+					{
+						LogicComponent.Network.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data), SteamId = id }, LogicComponent.Entity.GetPosition(), steamId: sendTo);
+					}
+					else
+					{
+						LogicComponent.Network.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data), SteamId = id }, sendTo);
+					}
 				}
 				else
 				{
-					LogicComponent.Network.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data), SteamId = id }, sendTo);
+					SessionComponent.Network.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data), SteamId = id }, sendTo);
+				}
+			}
+			else
+			{
+				if (NetworkAPI.LogNetworkTraffic)
+				{
+					MyLog.Default.Info($"[NetworkAPI] Could not send. Network not initialized.");
 				}
 			}
 		}
