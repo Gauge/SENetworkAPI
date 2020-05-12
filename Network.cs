@@ -304,7 +304,7 @@ namespace SENetworkAPI
 		/// <returns></returns>
 		public static float GetDeltaMilliseconds(long timestamp)
 		{
-			return (DateTime.UtcNow.Ticks - timestamp) * 0.0001f;
+			return (DateTime.UtcNow.Ticks - timestamp) / TimeSpan.TicksPerMillisecond;
 		}
 
 		/// <summary>
@@ -312,9 +312,11 @@ namespace SENetworkAPI
 		/// </summary>
 		/// <param name="date"></param>
 		/// <returns></returns>
+
+		private static double frames = 1000d / 60d;
 		public static int GetDeltaFrames(long timestamp)
 		{
-			return (int)Math.Ceiling((DateTime.UtcNow.Ticks - timestamp) * 0.000006d);
+			return (int)Math.Ceiling(GetDeltaMilliseconds(timestamp) / frames);
 		}
 	}
 }
