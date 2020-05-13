@@ -48,6 +48,8 @@ namespace SENetworkAPI
 
 		public long LastMessageTimestamp { get; set; }
 
+		protected static List<MyNetworkSessionComponent> SessionComponents = new List<MyNetworkSessionComponent>();
+
 		/// <summary>
 		/// Request the lastest value from the server
 		/// </summary>
@@ -97,7 +99,7 @@ namespace SENetworkAPI
 		private string componentType;
 
 		private int SessionComponentId;
-		private static List<MyNetworkSessionComponent> SessionComponents = new List<MyNetworkSessionComponent>();
+
 
 		/// <summary>
 		/// A dynamically syncing object. Used best with block terminal properties
@@ -131,9 +133,11 @@ namespace SENetworkAPI
 			LimitToSyncDistance = false;
 			componentType = session.GetType().ToString();
 
-			if (!SessionComponents.Contains(session))
+			SessionComponentId = SessionComponents.IndexOf(session);
+
+			if (SessionComponentId == -1)
 			{
-				SessionComponents.Add(SessionComponent);
+				SessionComponents.Add(session);
 				SessionComponentId = SessionComponents.Count - 1;
 			}
 
@@ -326,7 +330,7 @@ namespace SENetworkAPI
 				{
 					if (SessionComponents.Count <= pack.EntityId)
 					{
-						throw new Exception("Could not find Session Component in list");
+						throw new Exception($"Could not find Session Component in list");
 					}
 
 					MyNetworkSessionComponent netSession = SessionComponents[(int)pack.EntityId];
