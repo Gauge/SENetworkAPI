@@ -112,20 +112,29 @@ namespace SENetworkAPI
 				}
 				else
 				{
-					if (!string.IsNullOrWhiteSpace(cmd.Message) && !MyAPIGateway.Multiplayer.IsServer && MyAPIGateway.Session != null)
+					if (!string.IsNullOrWhiteSpace(cmd.Message))
 					{
-						MyAPIGateway.Utilities.ShowMessage(ModName, cmd.Message);
-					}
 
-					if (cmd != null)
-					{
-						OnCommandRecived?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data, new DateTime(cmd.Timestamp));
+						if (!MyAPIGateway.Utilities.IsDedicated)
+						{
+							if (MyAPIGateway.Session != null)
+							{
+								MyAPIGateway.Utilities.ShowMessage(ModName, cmd.Message);
+							}
+						}
+
+						if (MyAPIGateway.Multiplayer.IsServer)
+						{
+							SendCommand(null, cmd.Message);
+						}
 					}
 
 					if (cmd.CommandString == null)
 					{
-						cmd.CommandString = string.Empty;
+						return;
 					}
+
+					OnCommandRecived?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data, new DateTime(cmd.Timestamp));
 
 					string command = cmd.CommandString.Split(' ')[0];
 
@@ -150,7 +159,7 @@ namespace SENetworkAPI
 		{
 			if (command == null)
 			{
-				command = string.Empty;
+				throw new Exception($"[NetworkAPI] Cannot register a command using null. null is reserved for chat messages.");
 			}
 
 			command = command.ToLower();
@@ -251,6 +260,12 @@ namespace SENetworkAPI
 		/// <param name="steamId">the id of the user this is being sent to. 0 sends it to all users in range</param>
 		/// <param name="isReliable">make sure the packet reaches its destination</param>
 		internal abstract void SendCommand(Command cmd, Vector3D point, double range = 0, ulong steamId = ulong.MinValue, bool isReliable = true);
+
+		/// <summary>
+		/// Posts text into the ingame chat.
+		/// </summary>
+		/// <param name="message"></param>
+		public abstract void Say(string message);
 
 		/// <summary>
 		/// Unregisters listeners

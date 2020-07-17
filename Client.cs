@@ -92,5 +92,10 @@ namespace SENetworkAPI
 		{
 			SendCommand(cmd, steamId, isReliable);
 		}
+
+		public override void Say(string message) 
+		{
+			SendCommand(null, message);
+		}
 	}
 }

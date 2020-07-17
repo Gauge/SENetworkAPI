@@ -151,5 +151,15 @@ namespace SENetworkAPI
 				MyAPIGateway.Multiplayer.SendMessageTo(ComId, packet, player.SteamUserId, isReliable);
 			}
 		}
+
+		public override void Say(string message)
+		{
+			SendCommand(null, message);
+
+			if (MyAPIGateway.Session != null)
+			{
+				MyAPIGateway.Utilities.ShowMessage(ModName, message);
+			}
+		}
 	}
 }

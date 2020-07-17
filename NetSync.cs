@@ -105,12 +105,12 @@ namespace SENetworkAPI
 		/// A dynamically syncing object. Used best with block terminal properties
 		/// Make sure to initialize this as a class level variable
 		/// </summary>
-		public NetSync(MyNetworkGameLogicComponent logic, TransferType transferType, T startingValue = default(T), bool enableSync = true, bool limitToSyncDistance = true)
+		public NetSync(MyNetworkGameLogicComponent logic, TransferType transferType, T startingValue = default(T), bool syncOnLoad = true, bool limitToSyncDistance = true)
 		{
 			LogicComponent = logic;
 			TransferType = transferType;
 			_value = startingValue;
-			SyncOnLoad = enableSync;
+			SyncOnLoad = syncOnLoad;
 			LimitToSyncDistance = limitToSyncDistance;
 			componentType = logic.GetType().ToString();
 
@@ -124,12 +124,12 @@ namespace SENetworkAPI
 
 		}
 
-		public NetSync(MyNetworkSessionComponent session, TransferType transferType, T startingValue = default(T), bool enableSync = true)
+		public NetSync(MyNetworkSessionComponent session, TransferType transferType, T startingValue = default(T), bool syncOnLoad = true)
 		{
 			SessionComponent = session;
 			TransferType = transferType;
 			_value = startingValue;
-			SyncOnLoad = enableSync;
+			SyncOnLoad = syncOnLoad;
 			LimitToSyncDistance = false;
 			componentType = session.GetType().ToString();
 
@@ -154,7 +154,7 @@ namespace SENetworkAPI
 		/// <summary>
 		/// Allows you to change how syncing works when setting the value this way
 		/// </summary>
-		public void SetValue(T val, SyncType syncType)
+		public void SetValue(T val, SyncType syncType = SyncType.None)
 		{
 			T oldval = _value;
 			lock (_value)
