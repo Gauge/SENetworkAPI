@@ -55,6 +55,12 @@ namespace SENetworkAPI
 		/// </summary>
 		public abstract void Fetch();
 
+		/// <summary>
+		/// Triggers after recieving a fetch request from clients
+		/// and allows you to modify this property before it is sent.
+		/// </summary>
+		public Action<ulong> BeforeFetchRequestResponse;
+
 		internal abstract void Push(SyncType type, ulong sendTo);
 
 		internal abstract void SetNetworkValue(byte[] data, ulong sender);
@@ -319,6 +325,7 @@ namespace SENetworkAPI
 
 					if (pack.SyncType == SyncType.Fetch)
 					{
+						property.BeforeFetchRequestResponse?.Invoke(sender);
 						property.Push(SyncType.Post, sender);
 					}
 					else
