@@ -212,72 +212,79 @@ namespace SENetworkAPI
 		/// <param name="fetch"></param>
 		private void SendValue(SyncType syncType = SyncType.Broadcast, ulong sendTo = ulong.MinValue)
 		{
-			if (MyAPIGateway.Session.OnlineMode == MyOnlineModeEnum.OFFLINE ||
-				MyAPIGateway.Session.OnlineMode == MyOnlineModeEnum.PRIVATE ||
-				syncType == SyncType.None)
-				return;
-
-			if (Value == null)
+			try
 			{
-				MyLog.Default.Error($"[NetworkAPI] ID: {Id} Type: {typeof(T)} Value is null. Cannot transmit null value.");
-				return;
-			}
-
-			if (MyAPIGateway.Multiplayer.IsServer)
-			{
-				if (syncType == SyncType.Fetch)
+				if (MyAPIGateway.Session.OnlineMode == MyOnlineModeEnum.OFFLINE ||
+					MyAPIGateway.Session.OnlineMode == MyOnlineModeEnum.PRIVATE ||
+					syncType == SyncType.None)
 					return;
 
-				if (NetworkAPI.LogNetworkTraffic && syncType == SyncType.Post && sendTo == ulong.MinValue)
+				if (Value == null)
 				{
-					MyLog.Default.Error($"[NetworkAPI] <{componentType} - {Id}> Sync Type is POST but the recipient is missing. Sending message as Broadcast.");
-				}
-			}
-
-			if (NetworkAPI.LogNetworkTraffic)
-			{
-				MyLog.Default.Info($"[NetworkAPI] TRANSMITTING: Property: {Id} Sync Type: {syncType} Value: {Value}");
-			}
-
-			SyncData data = new SyncData() {
-				EntityId = (isLogicComponent) ? LogicComponent.Entity.EntityId : SessionComponentId,
-				IsGameLogicComponent = isLogicComponent,
-				ComponentType = componentType,
-				PropertyId = Id,
-				Data = MyAPIGateway.Utilities.SerializeToBinary(_value),
-				SyncType = syncType
-			};
-
-			if (NetworkAPI.IsInitialized)
-			{
-				ulong id = ulong.MinValue;
-				if (MyAPIGateway.Session?.LocalHumanPlayer != null)
-				{
-					id = MyAPIGateway.Session.LocalHumanPlayer.SteamUserId;
+					MyLog.Default.Error($"[NetworkAPI] ID: {Id} Type: {typeof(T)} Value is null. Cannot transmit null value.");
+					return;
 				}
 
-				if (isLogicComponent)
+				if (MyAPIGateway.Multiplayer.IsServer)
 				{
-					if (LogicComponent.Entity != null)
+					if (syncType == SyncType.Fetch)
+						return;
+
+					if (NetworkAPI.LogNetworkTraffic && syncType == SyncType.Post && sendTo == ulong.MinValue)
 					{
-						LogicComponent.Network.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data), SteamId = id }, LogicComponent.Entity.GetPosition(), steamId: sendTo);
+						MyLog.Default.Error($"[NetworkAPI] <{componentType} - {Id}> Sync Type is POST but the recipient is missing. Sending message as Broadcast.");
+					}
+				}
+
+				if (NetworkAPI.LogNetworkTraffic)
+				{
+					MyLog.Default.Info($"[NetworkAPI] TRANSMITTING: Property: {Id} Sync Type: {syncType} Value: {Value}");
+				}
+
+				SyncData data = new SyncData() {
+					EntityId = (isLogicComponent) ? LogicComponent.Entity.EntityId : SessionComponentId,
+					IsGameLogicComponent = isLogicComponent,
+					ComponentType = componentType,
+					PropertyId = Id,
+					Data = MyAPIGateway.Utilities.SerializeToBinary(_value),
+					SyncType = syncType
+				};
+
+				if (NetworkAPI.IsInitialized)
+				{
+					ulong id = ulong.MinValue;
+					if (MyAPIGateway.Session?.LocalHumanPlayer != null)
+					{
+						id = MyAPIGateway.Session.LocalHumanPlayer.SteamUserId;
+					}
+
+					if (isLogicComponent)
+					{
+						if (LogicComponent.Entity != null)
+						{
+							LogicComponent.Network.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data), SteamId = id }, LogicComponent.Entity.GetPosition(), steamId: sendTo);
+						}
+						else
+						{
+							LogicComponent.Network.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data), SteamId = id }, sendTo);
+						}
 					}
 					else
 					{
-						LogicComponent.Network.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data), SteamId = id }, sendTo);
+						SessionComponent.Network.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data), SteamId = id }, sendTo);
 					}
 				}
 				else
 				{
-					SessionComponent.Network.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data), SteamId = id }, sendTo);
+					if (NetworkAPI.LogNetworkTraffic)
+					{
+						MyLog.Default.Error($"[NetworkAPI] Could not send. Network not initialized.");
+					}
 				}
 			}
-			else
+			catch 
 			{
-				if (NetworkAPI.LogNetworkTraffic)
-				{
-					MyLog.Default.Error($"[NetworkAPI] Could not send. Network not initialized.");
-				}
+				MyLog.Default.Error($"[NetworkAPI] SendValue(): Problem syncing value");
 			}
 		}
 
