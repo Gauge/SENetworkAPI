@@ -186,19 +186,26 @@ namespace SENetworkAPI
 		{
 			try
 			{
+				T oldval = _value;
 				lock (_value)
 				{
-					T val = _value;
 					_value = MyAPIGateway.Utilities.SerializeFromBinary<T>(data);
 
 					if (NetworkAPI.LogNetworkTraffic)
 					{
-						MyLog.Default.Info($"[NetworkAPI] <{componentType} - {Id}> New value: {val} --- Old value: {_value}");
+						MyLog.Default.Info($"[NetworkAPI] <{componentType} - {Id}> New value: {oldval} --- Old value: {_value}");
 					}
-
-					ValueChanged?.Invoke(val, _value);
-					ValueChangedByNetwork?.Invoke(val, _value, sender);
 				}
+
+				if ((TransferType == TransferType.ServerToClient && MyAPIGateway.Multiplayer.IsServer) ||
+					(TransferType == TransferType.ClientToServer && !MyAPIGateway.Multiplayer.IsServer) ||
+					TransferType == TransferType.Both)
+				{
+					SendValue();
+				}
+
+				ValueChanged?.Invoke(oldval, _value);
+				ValueChangedByNetwork?.Invoke(oldval, _value, sender);
 			}
 			catch (Exception e)
 			{
