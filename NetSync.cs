@@ -197,9 +197,7 @@ namespace SENetworkAPI
 					}
 				}
 
-				if ((TransferType == TransferType.ServerToClient && MyAPIGateway.Multiplayer.IsServer) ||
-					(TransferType == TransferType.ClientToServer && !MyAPIGateway.Multiplayer.IsServer) ||
-					TransferType == TransferType.Both)
+				if (MyAPIGateway.Multiplayer.IsServer && (TransferType == TransferType.ServerToClient || TransferType == TransferType.Both))
 				{
 					SendValue();
 				}
