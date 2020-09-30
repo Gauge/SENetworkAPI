@@ -1,26 +1,27 @@
 ## Overview
 
-The Space Engineers NetworkAPI is a neat, robust rapper for Space Engineers mods. Designed to be plug and play, the NetworkAPI has very little setup overhead.
+NetworkAPI is a neat, robust rapper for Space Engineers network transactions. It has been designed to streamline multiplayer development.
 
-To see this beeing used in a real world scenario check out: https://github.com/Gauge/RelativeTopSpeed
-
-## Example Properties
+Below is an example of NetSync properties.
 
 ```cs
 using SENetworkAPI;
 
 [MyEntityComponentDescriptor(typeof(MyObjectBuilder_UpgradeModule), true, "ANewModBlock")]
-public class ANewModBlock : MyNetworkAPIGameLogicComponent
+public class ANewModBlock : MyGameLogicComponent
 {
     // declare properties
     NetSync<bool> isActive;
 
     public override void Init(MyObjectBuilder_EntityBase objectBuilder)
     {
-        // It's recommended to check the initialized state in all classes
+        ushort comChannel 1234; // the mod communication channel
+        string ModName = "Hello World"; // this will show up as the sender for any chat message notifications
+        string Keyword = "/hello" // Keyword is used for chat commands
+        
         if (!NetworkAPI.IsInitialized) 
         {
-            NetworkAPI.Init(ComId, ModName, Keyword);
+            NetworkAPI.Init(comChannel, ModName, Keyword);
         }
         
         // initialize
@@ -60,7 +61,7 @@ public class ANewSessionMod : MySessionComponentBase
         Network.RegisterChatCommand(string.Empty, Chat_Help);
         Network.RegisterChatCommand("help", Chat_Help);
 
-        if (Network.NetworkType == NetworkTypes.Client)
+        if (!MyAPIGateway.Multiplayer.IsServer)
         {
             Network.RegisterNetworkCommand(null, ClientCallback);
             Network.RegisterChatCommand("update", (arg) => { Network.SendCommand("update"); });
@@ -91,15 +92,7 @@ public class ANewSessionMod : MySessionComponentBase
 
 ## Nit and Grit
 
-Properties only work for block mods. Just repalce the inherited `MyGameLogicComponent` with `MyNetworkAPIGameLogicComponent`
-
-```cs
-public class ANewModBlock : MyNetworkAPIGameLogicComponent
-{
-}
-```
-
-From there handling the `NetSync<>` object is similar to a standard variable. Assigning `NetSync<>.Value` will sync between client and server. Also here are some built in tools.
+The `NetSync<>` object is similar to a standard variable. Assigning `NetSync<>.Value` will sync to the server and/or clients depending on initial configuration. The following are other tools.
 
 ```cs
 void Fetch() // requests the active value from server
