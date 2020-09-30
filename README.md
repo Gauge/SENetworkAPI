@@ -75,12 +75,12 @@ private void On_ValueChangedByNetwork(string  oldval, string newval, ulong sende
 
 NetSync 
 ```cs
-void Fetch() // requests the active value from server
-void Push() // syncs the current value manually
-void SetValue(value, SyncType) // allows you to set the value without syncing and more
-Action<oldval, newval> ValueChanged // triggers any time the value changes
-Action<oldval, newval, sender> ValueChangedByNetwork // triggers when receives an update from the network
-Action BeforeFetchResponse
+void Fetch(); // requests the active value from server
+void Push(); // syncs the current value manually
+void SetValue(value, SyncType); // allows you to set the value without syncing and more
+Action<oldval, newval> ValueChanged; // triggers any time the value changes
+Action<oldval, newval, sender> ValueChangedByNetwork; // triggers when receives an update from the network
+Action BeforeFetchResponse;
 ```
 
 Network blobs have two different types of commands `Network` and `Chat`.
