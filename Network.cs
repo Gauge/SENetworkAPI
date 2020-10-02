@@ -78,7 +78,7 @@ namespace SENetworkAPI
 			}
 			else
 			{
-				if (MyAPIGateway.Utilities.IsDedicated)
+				if (!MyAPIGateway.Utilities.IsDedicated)
 				{
 					MyAPIGateway.Utilities.ShowMessage(ModName, "Command not recognized.");
 				}

@@ -231,12 +231,7 @@ namespace SENetworkAPI
 				_value = val;
 			}
 
-			if ((TransferType == TransferType.ServerToClient && MyAPIGateway.Multiplayer.IsServer) ||
-				(TransferType == TransferType.ClientToServer && !MyAPIGateway.Multiplayer.IsServer) ||
-				TransferType == TransferType.Both)
-			{
-				SendValue(syncType);
-			}
+			SendValue(syncType);
 
 			ValueChanged?.Invoke(oldval, val);
 
@@ -287,9 +282,20 @@ namespace SENetworkAPI
 					return;
 				}
 
+				if ((TransferType == TransferType.ServerToClient && !MyAPIGateway.Multiplayer.IsServer) ||
+					(TransferType == TransferType.ClientToServer && MyAPIGateway.Multiplayer.IsServer))
+				{
+					if (NetworkAPI.LogNetworkTraffic)
+					{
+						MyLog.Default.Info($"[NetworkAPI] {Descriptor()} Bad send direction transfer type is {TransferType}");
+					}
+
+					return;
+				}
+
 				if (MyAPIGateway.Session.OnlineMode == MyOnlineModeEnum.OFFLINE ||
-				MyAPIGateway.Session.OnlineMode == MyOnlineModeEnum.PRIVATE ||
-				syncType == SyncType.None)
+					MyAPIGateway.Session.OnlineMode == MyOnlineModeEnum.PRIVATE ||
+					syncType == SyncType.None)
 				{
 					if (NetworkAPI.LogNetworkTraffic)
 					{
