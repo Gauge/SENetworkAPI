@@ -410,14 +410,6 @@ namespace SENetworkAPI
 			{
 				MyEntity entity = (MyEntity)MyAPIGateway.Entities.GetEntityById(pack.EntityId);
 
-				if (NetworkAPI.LogNetworkTraffic)
-				{
-					if (entity != null)
-					{
-						MyLog.Default.Info($"[NetworkAPI] Entity found! {entity.EntityId}");
-					}
-				}
-
 				if (!PropertiesByEntity.ContainsKey(entity))
 				{
 					MyLog.Default.Info($"[NetworkAPI] Entity not registered in dictionary 'PropertiesByEntity'");
