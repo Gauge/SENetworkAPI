@@ -21,13 +21,16 @@ namespace SENetworkAPI
 		[ProtoMember(1)]
 		public long Id;
 		[ProtoMember(2)]
-		public byte[] Data;
+		public long EntityId;
 		[ProtoMember(3)]
+		public byte[] Data;
+		[ProtoMember(4)]
 		public SyncType SyncType;
 	}
 
 	public abstract class NetSync
 	{
+		internal static Dictionary<MyEntity, List<NetSync>> PropertiesByEntity = new Dictionary<MyEntity, List<NetSync>>();
 		internal static Dictionary<long, NetSync> PropertyById = new Dictionary<long, NetSync>();
 
 		internal static object locker = new object();
@@ -36,6 +39,11 @@ namespace SENetworkAPI
 		{
 			return generatorId++;
 		}
+
+		/// <summary>
+		/// The allowed network communication direction
+		/// </summary>
+		public TransferType TransferType { get; internal set; }
 
 		/// <summary>
 		/// The identity of this property
@@ -74,12 +82,7 @@ namespace SENetworkAPI
 	}
 
 	public class NetSync<T> : NetSync
-	{	
-		/// <summary>
-		/// The allowed network communication direction
-		/// </summary>
-		public TransferType TransferType { get; private set; }
-
+	{
 		/// <summary>
 		/// Fires each time the value is changed
 		/// Provides the old value and the new value
@@ -109,21 +112,6 @@ namespace SENetworkAPI
 		private MyEntity Entity;
 		private string sessionName;
 
-		/// <param name="logic">MyGameLogicComponent object this property is attached to</param>
-		/// <param name="transferType"></param>
-		/// <param name="startingValue">Sets an initial value</param>
-		/// <param name="syncOnLoad">automatically syncs data to clients when the class initializes</param>
-		/// <param name="limitToSyncDistance">marking this true only sends data to clients within sync distance</param>
-		public NetSync(MyGameLogicComponent logic, TransferType transferType, T startingValue = default(T), bool syncOnLoad = true, bool limitToSyncDistance = true)
-		{
-			if (logic?.Entity == null)
-			{
-				throw new Exception("[NetworkAPI] Attemped to create a NetSync property. MyGameLogicComponent was null.");
-			}
-
-			Init(logic.Entity as MyEntity, TransferType, startingValue, syncOnLoad, limitToSyncDistance);
-		}
-
 		/// <param name="entity">IMyEntity object this property is attached to</param>
 		/// <param name="transferType"></param>
 		/// <param name="startingValue">Sets an initial value</param>
@@ -136,7 +124,7 @@ namespace SENetworkAPI
 				throw new Exception("[NetworkAPI] Attemped to create a NetSync property. MyEntity was null.");
 			}
 
-			Init(entity as MyEntity, TransferType, startingValue, syncOnLoad, limitToSyncDistance);
+			Init(entity as MyEntity, transferType, startingValue, syncOnLoad, limitToSyncDistance);
 		}
 
 		/// <param name="entity">MyEntity object this property is attached to</param>
@@ -151,7 +139,22 @@ namespace SENetworkAPI
 				throw new Exception("[NetworkAPI] Attemped to create a NetSync property. MyEntity was null.");
 			}
 
-			Init(entity, TransferType, startingValue, syncOnLoad, limitToSyncDistance);
+			Init(entity, transferType, startingValue, syncOnLoad, limitToSyncDistance);
+		}
+
+		/// <param name="logic">MyGameLogicComponent object this property is attached to</param>
+		/// <param name="transferType"></param>
+		/// <param name="startingValue">Sets an initial value</param>
+		/// <param name="syncOnLoad">automatically syncs data to clients when the class initializes</param>
+		/// <param name="limitToSyncDistance">marking this true only sends data to clients within sync distance</param>
+		public NetSync(MyGameLogicComponent logic, TransferType transferType, T startingValue = default(T), bool syncOnLoad = true, bool limitToSyncDistance = true)
+		{
+			if (logic?.Entity == null)
+			{
+				throw new Exception("[NetworkAPI] Attemped to create a NetSync property. MyGameLogicComponent was null.");
+			}
+
+			Init(logic.Entity as MyEntity, transferType, startingValue, syncOnLoad, limitToSyncDistance);
 		}
 
 		/// <param name="logic">MySessionComponentBase object this property is attached to</param>
@@ -167,7 +170,7 @@ namespace SENetworkAPI
 			}
 
 			sessionName = logic.GetType().Name;
-			Init(null, TransferType, startingValue, syncOnLoad, limitToSyncDistance);
+			Init(null, transferType, startingValue, syncOnLoad, limitToSyncDistance);
 		}
 
 		/// <summary>
@@ -179,7 +182,7 @@ namespace SENetworkAPI
 		/// <param name="limitToSyncDistance">marking this true only sends data to clients within sync distance</param>
 		private void Init(MyEntity entity, TransferType transferType, T startingValue = default(T), bool syncOnLoad = true, bool limitToSyncDistance = true)
 		{
-			TransferType = TransferType;
+			TransferType = transferType;
 			_value = startingValue;
 			SyncOnLoad = syncOnLoad;
 			LimitToSyncDistance = limitToSyncDistance;
@@ -188,12 +191,25 @@ namespace SENetworkAPI
 			{
 				Entity = entity;
 				Entity.OnClose += Entity_OnClose;
-			}
 
-			lock (locker)
+				if (PropertiesByEntity.ContainsKey(Entity))
+				{
+					PropertiesByEntity[Entity].Add(this);
+					Id = PropertiesByEntity[Entity].Count - 1;
+				}
+				else
+				{
+					PropertiesByEntity.Add(Entity, new List<NetSync> { this });
+					Id = 0;
+				}
+			}
+			else
 			{
-				Id = GeneratePropertyId();
-				PropertyById.Add(Id, this);
+				lock (locker)
+				{
+					Id = GeneratePropertyId();
+					PropertyById.Add(Id, this);
+				}
 			}
 
 			// sync
@@ -255,7 +271,7 @@ namespace SENetworkAPI
 					}
 				}
 
-				if (MyAPIGateway.Multiplayer.IsServer && (TransferType == TransferType.ServerToClient || TransferType == TransferType.Both))
+				if (MyAPIGateway.Multiplayer.IsServer)
 				{
 					SendValue();
 				}
@@ -278,7 +294,17 @@ namespace SENetworkAPI
 			{
 				if (!NetworkAPI.IsInitialized)
 				{
-					MyLog.Default.Error($"[NetworkAPI] The NetworkAPI has not been initialized. Use NetworkAPI.Init() to initialize it.");
+					MyLog.Default.Error($"[NetworkAPI] _ERROR_ The NetworkAPI has not been initialized. Use NetworkAPI.Init() to initialize it.");
+					return;
+				}
+
+				if (syncType == SyncType.None)
+				{
+					if (NetworkAPI.LogNetworkTraffic)
+					{
+						MyLog.Default.Info($"[NetworkAPI] _INTERNAL_ {Descriptor()} Wont send value: {Value}");
+					}
+
 					return;
 				}
 
@@ -294,12 +320,11 @@ namespace SENetworkAPI
 				}
 
 				if (MyAPIGateway.Session.OnlineMode == MyOnlineModeEnum.OFFLINE ||
-					MyAPIGateway.Session.OnlineMode == MyOnlineModeEnum.PRIVATE ||
-					syncType == SyncType.None)
+					MyAPIGateway.Session.OnlineMode == MyOnlineModeEnum.PRIVATE)
 				{
 					if (NetworkAPI.LogNetworkTraffic)
 					{
-						MyLog.Default.Info($"[NetworkAPI] _OFFLINE_ {Descriptor()} Attemped to send value: {Value}");
+						MyLog.Default.Info($"[NetworkAPI] _OFFLINE_ {Descriptor()} Wont send value: {Value}");
 					}
 
 					return;
@@ -307,60 +332,49 @@ namespace SENetworkAPI
 
 				if (Value == null)
 				{
-					MyLog.Default.Error($"[NetworkAPI] ID: {Id} Type: {typeof(T)} Value is null. Cannot transmit null value.");
+					if (NetworkAPI.LogNetworkTraffic)
+					{
+						MyLog.Default.Error($"[NetworkAPI] _ERROR_ {Descriptor()} Value is null. Cannot transmit null value.");
+					}
+
 					return;
 				}
 
-				if (MyAPIGateway.Multiplayer.IsServer)
+				if (syncType == SyncType.Fetch && MyAPIGateway.Multiplayer.IsServer)
 				{
-					if (syncType == SyncType.Fetch)
-						return;
-
-					if (NetworkAPI.LogNetworkTraffic && syncType == SyncType.Post && sendTo == ulong.MinValue)
-					{
-						MyLog.Default.Error($"[NetworkAPI] {Descriptor()} Sync Type is POST but the recipient is missing. Sending message as Broadcast.");
-					}
-				}
-
-				if (NetworkAPI.LogNetworkTraffic)
-				{
-					MyLog.Default.Info($"[NetworkAPI] _TRANSMITTING_ {Descriptor()} Sync Type: {syncType} Value: {Value}");
+					return;
 				}
 
 				SyncData data = new SyncData() {
 					Id = Id,
+					EntityId = (Entity != null) ? Entity.EntityId : 0,
 					Data = MyAPIGateway.Utilities.SerializeToBinary(_value),
 					SyncType = syncType
 				};
 
-				if (NetworkAPI.IsInitialized)
+				if (NetworkAPI.LogNetworkTraffic)
 				{
-					ulong id = ulong.MinValue;
-					if (MyAPIGateway.Session?.LocalHumanPlayer != null)
-					{
-						id = MyAPIGateway.Session.LocalHumanPlayer.SteamUserId;
-					}
+					MyLog.Default.Info($"[NetworkAPI] _TRANSMITTING_ {Descriptor()} - {data.Id}, {data.EntityId}, {data.SyncType}, {_value}");
+				}
 
-					if (Entity != null)
-					{
-						NetworkAPI.Instance.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data), SteamId = id }, Entity.PositionComp.GetPosition(), steamId: sendTo);
-					}
-					else
-					{
-						NetworkAPI.Instance.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data), SteamId = id }, steamId: sendTo);
-					}
+				ulong id = ulong.MinValue;
+				if (MyAPIGateway.Session?.LocalHumanPlayer != null)
+				{
+					id = MyAPIGateway.Session.LocalHumanPlayer.SteamUserId;
+				}
+
+				if (LimitToSyncDistance && Entity != null)
+				{
+					NetworkAPI.Instance.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data), SteamId = id }, Entity.PositionComp.GetPosition(), steamId: sendTo);
 				}
 				else
 				{
-					if (NetworkAPI.LogNetworkTraffic)
-					{
-						MyLog.Default.Error($"[NetworkAPI] Could not send. Network not initialized.");
-					}
+					NetworkAPI.Instance.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data), SteamId = id }, steamId: sendTo);
 				}
 			}
-			catch
+			catch (Exception e)
 			{
-				MyLog.Default.Error($"[NetworkAPI] SendValue(): Problem syncing value");
+				MyLog.Default.Error($"[NetworkAPI] _ERROR_ SendValue(): Problem syncing value: {e}");
 			}
 		}
 
@@ -378,18 +392,50 @@ namespace SENetworkAPI
 
 			if (NetworkAPI.LogNetworkTraffic)
 			{
-				MyLog.Default.Info($"[NetworkAPI] Transmission type: {pack.SyncType}");
+				MyLog.Default.Info($"[NetworkAPI] {pack.Id}, {pack.EntityId}, {pack.SyncType}");
 			}
 
-			if (!PropertyById.ContainsKey(pack.Id))
+			NetSync property;
+			if (pack.EntityId == 0)
 			{
-				MyLog.Default.Info($"[NetworkAPI] Could not locate property {pack.Id}");
-				return;
+				if (!PropertyById.ContainsKey(pack.Id))
+				{
+					MyLog.Default.Info($"[NetworkAPI] id not registered in dictionary 'PropertyById'");
+					return;
+				}
+
+				property = PropertyById[pack.Id];
+			}
+			else
+			{
+				MyEntity entity = (MyEntity)MyAPIGateway.Entities.GetEntityById(pack.EntityId);
+
+				if (NetworkAPI.LogNetworkTraffic)
+				{
+					if (entity != null)
+					{
+						MyLog.Default.Info($"[NetworkAPI] Entity found! {entity.EntityId}");
+					}
+				}
+
+				if (!PropertiesByEntity.ContainsKey(entity))
+				{
+					MyLog.Default.Info($"[NetworkAPI] Entity not registered in dictionary 'PropertiesByEntity'");
+					return;
+				}
+
+				List<NetSync> properties = PropertiesByEntity[entity];
+
+				if (pack.Id >= properties.Count)
+				{
+					MyLog.Default.Info($"[NetworkAPI] property index out of range");
+					return;
+				}
+
+				property = properties[(int)pack.Id];
 			}
 
-			NetSync property = PropertyById[pack.Id];
 			property.LastMessageTimestamp = timestamp;
-
 			if (pack.SyncType == SyncType.Fetch)
 			{
 				property.BeforeFetchRequestResponse?.Invoke(sender);

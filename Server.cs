@@ -143,7 +143,7 @@ namespace SENetworkAPI
 
 			if (LogNetworkTraffic)
 			{
-				MyLog.Default.Info($"[NetworkAPI] TRANSMITTING Bytes: {packet.Length}  Command: {cmd.CommandString}  To: {players.Count} Users");
+				MyLog.Default.Info($"[NetworkAPI] _TRANSMITTING_ Bytes: {packet.Length}  Command: {cmd.CommandString}  To: {players.Count} Users within {radius}m");
 			}
 
 			foreach (IMyPlayer player in players)
