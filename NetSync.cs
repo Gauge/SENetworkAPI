@@ -248,7 +248,6 @@ namespace SENetworkAPI
 			}
 
 			SendValue(syncType);
-
 			ValueChanged?.Invoke(oldval, val);
 
 		}
@@ -352,15 +351,20 @@ namespace SENetworkAPI
 					SyncType = syncType
 				};
 
-				if (NetworkAPI.LogNetworkTraffic)
-				{
-					MyLog.Default.Info($"[NetworkAPI] _TRANSMITTING_ {Descriptor()} - {data.Id}, {data.EntityId}, {data.SyncType}, {_value}");
-				}
-
 				ulong id = ulong.MinValue;
 				if (MyAPIGateway.Session?.LocalHumanPlayer != null)
 				{
 					id = MyAPIGateway.Session.LocalHumanPlayer.SteamUserId;
+				}
+
+				if (id == sendTo && id != ulong.MinValue)
+				{
+					MyLog.Default.Error($"[NetworkAPI] _ERROR_ {Descriptor()} The sender id is the same as the recievers id. data will not be sent.");
+				}
+
+				if (NetworkAPI.LogNetworkTraffic)
+				{
+					MyLog.Default.Info($"[NetworkAPI] _TRANSMITTING_ {Descriptor()} - Id:{data.Id}, EId:{data.EntityId}, {data.SyncType}, Val:{_value}");
 				}
 
 				if (LimitToSyncDistance && Entity != null)
@@ -392,7 +396,7 @@ namespace SENetworkAPI
 
 			if (NetworkAPI.LogNetworkTraffic)
 			{
-				MyLog.Default.Info($"[NetworkAPI] {pack.Id}, {pack.EntityId}, {pack.SyncType}");
+				MyLog.Default.Info($"[NetworkAPI] Id:{pack.Id}, EId:{pack.EntityId}, {pack.SyncType}");
 			}
 
 			NetSync property;
@@ -486,13 +490,13 @@ namespace SENetworkAPI
 			{
 				if (Entity is MyCubeBlock)
 				{
-					return $"<{(Entity as MyCubeBlock).CubeGrid.DisplayName}//{Entity.GetType().Name}.{Entity.EntityId}//{typeof(T).Name}.{Id}>";
+					return $"<{(Entity as MyCubeBlock).CubeGrid.DisplayName}_{((Entity.DefinitionId?.SubtypeId == null) ? Entity.GetType().Name.ToString() : Entity.DefinitionId?.SubtypeId.ToString())}.{Entity.EntityId}_{typeof(T).Name}.{Id}>";
 				}
 
-				return $"<{Entity.GetType().Name}.{Entity.EntityId}//{typeof(T).Name}.{Id}>";
+				return $"<{((Entity.DefinitionId?.SubtypeId == null) ? Entity.GetType().Name.ToString() : Entity.DefinitionId?.SubtypeId.ToString())}.{Entity.EntityId}_{typeof(T).Name}.{Id}>";
 			}
 
-			return $"<{sessionName}//{typeof(T).Name}.{Id}>";
+			return $"<{sessionName}_{typeof(T).Name}.{Id}>";
 		}
 	}
 }

@@ -277,6 +277,7 @@ namespace SENetworkAPI
 		/// <summary>
 		/// Unregisters listeners
 		/// </summary>
+		[ObsoleteAttribute("This property is obsolete. Close is no longer required", false)]
 		public void Close()
 		{
 			MyLog.Default.Info($"[NetworkAPI] Unregistering communication stream: {ComId}");
@@ -292,6 +293,7 @@ namespace SENetworkAPI
 		/// <summary>
 		/// Calls Instance.Close()
 		/// </summary>
+		[ObsoleteAttribute("This property is obsolete. Dispose is no longer required", false)]
 		public static void Dispose()
 		{
 			if (IsInitialized)

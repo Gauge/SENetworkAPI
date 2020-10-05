@@ -126,7 +126,7 @@ namespace SENetworkAPI
 			List<IMyPlayer> players = new List<IMyPlayer>();
 			if (steamId == ulong.MinValue)
 			{
-				MyAPIGateway.Players.GetPlayers(players, (p) => (p.GetPosition() - point).LengthSquared() < (radius * radius));
+				MyAPIGateway.Players.GetPlayers(players, (p) => (p.GetPosition() - point).LengthSquared() < (radius * radius) && p.SteamUserId != cmd.SteamId);
 			}
 			else
 			{
