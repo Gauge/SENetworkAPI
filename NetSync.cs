@@ -307,7 +307,8 @@ namespace SENetworkAPI
 					return;
 				}
 
-				if ((TransferType == TransferType.ServerToClient && !MyAPIGateway.Multiplayer.IsServer) ||
+				if (syncType != SyncType.Fetch && 
+					(TransferType == TransferType.ServerToClient && !MyAPIGateway.Multiplayer.IsServer) ||
 					(TransferType == TransferType.ClientToServer && MyAPIGateway.Multiplayer.IsServer))
 				{
 					if (NetworkAPI.LogNetworkTraffic)
@@ -336,11 +337,6 @@ namespace SENetworkAPI
 						MyLog.Default.Error($"[NetworkAPI] _ERROR_ {Descriptor()} Value is null. Cannot transmit null value.");
 					}
 
-					return;
-				}
-
-				if (syncType == SyncType.Fetch && MyAPIGateway.Multiplayer.IsServer)
-				{
 					return;
 				}
 
@@ -445,10 +441,14 @@ namespace SENetworkAPI
 
 		/// <summary>
 		/// Request the lastest value from the server
+		/// Servers are not allowed to fetch from clients
 		/// </summary>
 		public override void Fetch()
 		{
-			SendValue(SyncType.Fetch);
+			if (!MyAPIGateway.Multiplayer.IsServer)
+			{
+				SendValue(SyncType.Fetch);
+			}
 		}
 
 		/// <summary>

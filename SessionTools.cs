@@ -16,6 +16,11 @@ namespace SENetworkAPI
 			MyAPIGateway.Session.OnSessionReady += OnReady;
 		}
 
+		protected override void UnloadData()
+		{
+			NetworkAPI.Dispose();
+		}
+
 		private void OnReady()
 		{
 			if (NetworkAPI.LogNetworkTraffic)
