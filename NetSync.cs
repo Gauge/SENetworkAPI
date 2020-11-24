@@ -360,7 +360,7 @@ namespace SENetworkAPI
 
 				if (NetworkAPI.LogNetworkTraffic)
 				{
-					MyLog.Default.Info($"[NetworkAPI] _TRANSMITTING_ {Descriptor()} - Id:{data.Id}, EId:{data.EntityId}, {data.SyncType}, Val:{_value}");
+					MyLog.Default.Info($"[NetworkAPI] _TRANSMITTING_ {Descriptor()} - Id:{data.Id}, EId:{data.EntityId}, {data.SyncType}, {((data.SyncType == SyncType.Fetch) ? "" : $"Val:{_value}")}");
 				}
 
 				if (LimitToSyncDistance && Entity != null)

@@ -153,7 +153,7 @@ namespace SENetworkAPI
 			}
 			catch (Exception e)
 			{
-				MyLog.Default.Error($"[NetworkAPI] Failed to unpack message:\n{e.ToString()}");
+				MyLog.Default.Error($"[NetworkAPI] Failure in message processing:\n{e.ToString()}");
 			}
 		}
 

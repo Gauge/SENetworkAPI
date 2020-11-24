@@ -1,5 +1,6 @@
 ﻿using Sandbox.ModAPI;
 using System;
+using VRage.Game;
 using VRage.Game.Components;
 using VRage.Utils;
 
@@ -12,6 +13,11 @@ namespace SENetworkAPI
 		public static Action WhenReady;
 
 		public override void LoadData()
+		{
+			MyAPIGateway.Session.OnSessionReady += OnReady;
+		}
+
+		public override void Init(MyObjectBuilder_SessionComponent sessionComponent)
 		{
 			MyAPIGateway.Session.OnSessionReady += OnReady;
 		}
