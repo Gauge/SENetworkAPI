@@ -410,6 +410,12 @@ namespace SENetworkAPI
 			{
 				MyEntity entity = (MyEntity)MyAPIGateway.Entities.GetEntityById(pack.EntityId);
 
+				if (entity == null)
+				{
+					MyLog.Default.Info($"[NetworkAPI] Failed to get entity by id");
+					return;
+				}
+
 				if (!PropertiesByEntity.ContainsKey(entity))
 				{
 					MyLog.Default.Info($"[NetworkAPI] Entity not registered in dictionary 'PropertiesByEntity'");

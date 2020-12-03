@@ -12,11 +12,6 @@ namespace SENetworkAPI
 		public static bool Ready { get; private set; }
 		public static Action WhenReady;
 
-		public override void LoadData()
-		{
-			MyAPIGateway.Session.OnSessionReady += OnReady;
-		}
-
 		public override void Init(MyObjectBuilder_SessionComponent sessionComponent)
 		{
 			MyAPIGateway.Session.OnSessionReady += OnReady;
@@ -29,6 +24,18 @@ namespace SENetworkAPI
 
 		private void OnReady()
 		{
+			if (MyAPIGateway.Session.IsServer)
+			{
+				ReadyUp();
+			}
+			else
+			{
+				MyAPIGateway.Parallel.StartBackground(() => { MyAPIGateway.Parallel.Sleep(10000); }, ReadyUp);
+			}
+		}
+
+		private void ReadyUp() 
+		{
 			if (NetworkAPI.LogNetworkTraffic)
 			{
 				MyLog.Default.Info("[SENetworkAPI] SessionTools: Sending Ready Signal");
@@ -37,7 +44,6 @@ namespace SENetworkAPI
 			Ready = true;
 			WhenReady?.Invoke();
 			MyAPIGateway.Session.OnSessionReady -= OnReady;
-
 		}
 	}
 }
