@@ -214,7 +214,14 @@ namespace SENetworkAPI
 
 			if (SyncOnLoad)
 			{
-				Entity.AddedToScene += SyncOnAddedToScene;
+				if (Entity != null)
+				{
+					Entity.AddedToScene += SyncOnAddedToScene;
+				}
+				else
+				{
+					Fetch();
+				}
 			}
 
 			if (NetworkAPI.LogNetworkTraffic)
