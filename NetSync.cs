@@ -327,8 +327,7 @@ namespace SENetworkAPI
 					return;
 				}
 
-				if (MyAPIGateway.Session.OnlineMode == MyOnlineModeEnum.OFFLINE ||
-					MyAPIGateway.Session.OnlineMode == MyOnlineModeEnum.PRIVATE)
+				if (MyAPIGateway.Session.OnlineMode == MyOnlineModeEnum.OFFLINE)
 				{
 					if (NetworkAPI.LogNetworkTraffic)
 					{
