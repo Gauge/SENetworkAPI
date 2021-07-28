@@ -194,13 +194,19 @@ namespace SENetworkAPI
 
 				if (PropertiesByEntity.ContainsKey(Entity))
 				{
-					PropertiesByEntity[Entity].Add(this);
-					Id = PropertiesByEntity[Entity].Count - 1;
+					lock (locker)
+					{
+						PropertiesByEntity[Entity].Add(this);
+						Id = PropertiesByEntity[Entity].Count - 1;
+					}
 				}
 				else
 				{
-					PropertiesByEntity.Add(Entity, new List<NetSync> { this });
-					Id = 0;
+					lock (locker)
+					{
+						PropertiesByEntity.Add(Entity, new List<NetSync> { this });
+						Id = 0;
+					}	
 				}
 			}
 			else
