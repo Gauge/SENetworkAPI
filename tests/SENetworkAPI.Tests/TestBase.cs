@@ -82,6 +82,18 @@ namespace SENetworkAPI.Tests
 			return (Client)NetworkAPI.Instance;
 		}
 
+		/// <summary>
+		/// Tears the current instance down completely so a fresh one can be
+		/// started in a different role. Used by the end-to-end tests to play
+		/// both sides of a conversation in sequence.
+		/// </summary>
+		protected void Restart()
+		{
+			Game?.Dispose();
+			Game = null;
+			ResetStaticState();
+		}
+
 		/// <summary>A fake game with no NetworkAPI instance initialized.</summary>
 		protected FakeGame GivenUninitializedClient(ulong steamId = ClientId)
 		{
