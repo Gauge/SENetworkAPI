@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>SENetworkAPI.Tests</RootNamespace>
+    <!-- CS0618: the suite deliberately exercises the obsolete Close()/Dispose() members. -->
+    <NoWarn>$(NoWarn);CS0618;CS0067</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    The production sources are compiled *into* the test assembly rather than
+    referenced, for two reasons:
+      1. There is no shipping .csproj; Space Engineers compiles mod sources
+         itself, so the repo is a bare folder of .cs files.
+      2. Most of the interesting surface (Command, SyncData, SendCommand(Command..),
+         the NetSync registries) is `internal`. Compiling in place makes it
+         reachable without adding InternalsVisibleTo to shipped code.
+  -->
+  <ItemGroup>
+    <Compile Include="../../*.cs" LinkBase="Production" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../SEStubs/SEStubs.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+</Project>
