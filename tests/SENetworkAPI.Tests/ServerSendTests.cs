@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using SEStubs;
+using VRage.Game;
 using VRage;
 using VRage.Game.ModAPI;
 using VRageMath;
@@ -174,7 +175,7 @@ namespace SENetworkAPI.Tests
 		{
 			Server server = GivenServer();
 			MoveHostOutOfRange();
-			Game.Session.SessionSettings = new FakeSessionSettings { SyncDistance = 2000 };
+			Game.Session.SessionSettings = new MyObjectBuilder_SessionSettings { SyncDistance = 2000 };
 			Game.Players.Add(201, new Vector3D(1900, 0, 0));  // inside sync distance
 			Game.Players.Add(202, new Vector3D(2100, 0, 0));  // outside
 			Game.ClearTraffic();
@@ -258,16 +259,110 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
-		public void RadiusSend_EchoesTheMessageLocally()
+		public void RadiusSend_WithAMessage_AmplifiesItOnAListenServer()
 		{
+			// The host is inside its own radius and is not excluded (the filter
+			// only skips Command.SteamId, which is 0 here), and the engine
+			// delivers a packet addressed to the local player straight back.
+			// So the line is shown three times on the host -- local echo, own
+			// packet, then the relay's echo -- and the clients receive it twice.
 			Server server = GivenServer();
 			Game.Players.Add(201, Vector3D.Zero);
 			Game.ClearTraffic();
 
 			server.SendCommand("boom", Vector3D.Zero, 1000, message: "kaboom");
 
-			Assert.Single(Game.ShownMessages);
-			Assert.Equal("kaboom", Game.ShownMessages[0].Text);
+			Assert.Equal(3, Game.ShownMessages.Count);
+			Assert.All(Game.ShownMessages, m => Assert.Equal("kaboom", m.Text));
+			// Two directed packets (host, client 201) plus a full broadcast that
+			// the host emitted while handling its own copy.
+			Assert.Equal(3, Game.Sent.Count);
+			Assert.Single(Game.Sent, p => p.Target == PacketTarget.Others);
+		}
+
+		[Fact]
+		public void RadiusSend_WithoutAMessage_DoesNotAmplify()
+		{
+			Server server = GivenServer();
+			MoveHostOutOfRange();
+			Game.Players.Add(201, Vector3D.Zero);
+			Game.ClearTraffic();
+
+			server.SendCommand("boom", Vector3D.Zero, 1000);
+
+			Assert.Single(Game.Sent);
+			Assert.Empty(Game.ShownMessages);
+		}
+
+		[Fact]
+		public void ADirectedSendToTheHostIsDeliveredLocally()
+		{
+			// HandleMessageClient in the engine dispatches to the local handlers
+			// when recipient == Sync.MyId, so a server addressing itself runs its
+			// own receive path.
+			NetworkAPI server = GivenServer();
+			bool received = false;
+			server.RegisterNetworkCommand("ping", (s, c, d, t) => received = true);
+			Game.ClearTraffic();
+
+			server.SendCommand("ping", steamId: HostId);
+
+			Assert.True(received);
+		}
+
+		[Fact]
+		public void UnreliableMessagesOverTheEngineLimitAreSilentlyDropped()
+		{
+			// MyMultiplayerBase refuses any unreliable message longer than 1024
+			// bytes and returns false. SENetworkAPI discards that return value,
+			// so the data disappears without a trace.
+			Server server = GivenServer();
+			Game.ClearTraffic();
+
+			server.SendCommand("bulk", data: new byte[4096], isReliable: false);
+
+			Assert.Empty(Game.Sent);
+			Assert.Single(Game.Multiplayer.Dropped);
+			Assert.False(LoggedError("dropped"));
+			Assert.False(LoggedWarning("dropped"));
+		}
+
+		[Fact]
+		public void UnreliableMessagesUnderTheEngineLimitGoThrough()
+		{
+			Server server = GivenServer();
+			Game.ClearTraffic();
+
+			server.SendCommand("small", data: new byte[64], isReliable: false);
+
+			Assert.Single(Game.Sent);
+			Assert.Empty(Game.Multiplayer.Dropped);
+		}
+
+		[Fact]
+		public void WhetherAnUnreliableSendSurvivesDependsOnHowWellItCompresses()
+		{
+			// Compression runs before the engine's size check, so the limit
+			// applies to the compressed packet. A 100KB block of zeroes squeezes
+			// under 1024 bytes and goes through...
+			Server server = GivenServer();
+			Game.ClearTraffic();
+
+			server.SendCommand("zeroes", data: new byte[NetworkAPI.CompressionThreshold + 1], isReliable: false);
+
+			Assert.Single(Game.Sent);
+			Assert.Empty(Game.Multiplayer.Dropped);
+
+			// ...while the same size of incompressible data is dropped, as is
+			// any payload between 1KB and the 100KB compression threshold.
+			Game.ClearTraffic();
+			byte[] random = new byte[NetworkAPI.CompressionThreshold + 1];
+			new Random(99).NextBytes(random);
+
+			server.SendCommand("random", data: random, isReliable: false);
+
+			Assert.Empty(Game.Sent);
+			Assert.Single(Game.Multiplayer.Dropped);
 		}
 
 		[Fact]

@@ -460,7 +460,10 @@ namespace SENetworkAPI.Tests
 		[Fact]
 		public void SendingToYourself_IsLoggedAsAnErrorButStillTransmitted()
 		{
-			// Documented defect: the self-send check logs and then falls through.
+			// Documented defect: the self-send check logs "data will not be sent"
+			// and then falls through and sends anyway. The engine delivers the
+			// packet back to the host, whose server-side receive path then
+			// re-broadcasts it -- so a push aimed at one player reaches everyone.
 			GivenServer(hostSteamId: 100);
 			NetSync<int> property = Property();
 			Game.ClearTraffic();
@@ -468,7 +471,9 @@ namespace SENetworkAPI.Tests
 			property.Push(100);
 
 			Assert.True(LoggedError("sender id is the same as the recievers id"));
-			Assert.Single(Game.Sent);
+			Assert.Equal(2, Game.Sent.Count);
+			Assert.Equal(PacketTarget.Direct, Game.Sent[0].Target);
+			Assert.Equal(PacketTarget.Others, Game.Sent[1].Target);
 		}
 	}
 }
