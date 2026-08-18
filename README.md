@@ -12,6 +12,12 @@ Drop the `.cs` files into your mod, pick a communication channel, and go.
 
 📚 **[Full documentation](docs/README.md)** · 🧪 `dotnet test tests/SENetworkAPI.Tests`
 
+> **Two things to know before you build on this.** The steam id you are handed
+> as "the sender" is not verified by the game — a modified client can put any id
+> there, so never gate permissions on it. And `isReliable: false` silently drops
+> anything over 1024 bytes. Details in
+> [known-issues.md](docs/known-issues.md).
+
 ## Syncing a variable
 
 ```csharp
