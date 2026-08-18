@@ -1,0 +1,190 @@
+# NetSync&lt;T&gt;
+
+`NetSync<T>` is a variable that keeps itself in step across the network. You
+declare it once, assign to it, and the new value shows up on the other side.
+
+```csharp
+NetSync<bool> isActive;
+
+public override void Init(MyObjectBuilder_EntityBase objectBuilder)
+{
+    if (!NetworkAPI.IsInitialized) NetworkAPI.Init(ComId, ModName, Keyword);
+
+    isActive = new NetSync<bool>(this, TransferType.Both, false);
+}
+
+// later
+isActive.Value = true;      // serialized and sent
+```
+
+## Declaring one
+
+There are four constructors, differing only in what the property is attached to:
+
+```csharp
+new NetSync<T>(IMyEntity entity,            TransferType, T startingValue = default,
+               bool syncOnLoad = true, bool limitToSyncDistance = true)
+new NetSync<T>(MyEntity entity,             TransferType, ...)
+new NetSync<T>(MyGameLogicComponent logic,  TransferType, ...)   // uses logic.Entity
+new NetSync<T>(MySessionComponentBase logic, TransferType, ...)  // session-scoped
+```
+
+Passing `null` (or a game logic component with no `Entity`) throws.
+
+| Parameter | Default | Effect |
+| --- | --- | --- |
+| `transferType` | — | Which direction updates are allowed to travel. See below. |
+| `startingValue` | `default(T)` | Local initial value. **Give reference types a non-null value** — see [null values](#null-values). |
+| `syncOnLoad` | `true` | Ask the server for the current value as soon as this side is ready. |
+| `limitToSyncDistance` | `true` | Entity properties only: send updates just to players near the entity. |
+
+`T` must be serializable by `MyAPIGateway.Utilities.SerializeToBinary` — a
+primitive, a `string`, or a type carrying protobuf-net contract attributes.
+
+## Addressing
+
+A property is addressed by a pair: `(EntityId, Id)`.
+
+**Entity-scoped** properties get `EntityId` from the entity, and `Id` is
+**the index of their declaration order on that entity** — the first `NetSync`
+created for an entity is 0, the second is 1, and so on.
+
+**Session-scoped** properties (the `MySessionComponentBase` constructor) use
+`EntityId = 0` and take `Id` from a global counter that starts at 1 and
+increments per property constructed.
+
+Both schemes mean **client and server must be running the same build of the
+mod, and must construct their properties in the same order**. Adding a property
+in the middle of a block's `Init` shifts every later index; an update then lands
+on the wrong property with no error at all. A packet whose index is past the end
+of the list is dropped with a log line (`property index out of range`).
+
+## Reading and writing
+
+```csharp
+T   value = property.Value;          // plain read
+property.Value = newValue;           // set + Broadcast
+property.SetValue(newValue);         // set, do NOT send (SyncType.None)
+property.SetValue(newValue, SyncType.Broadcast);
+property.Push();                     // send the current value to everyone
+property.Push(steamId);              // send the current value to one player
+property.Fetch();                    // ask the server for the current value
+```
+
+`Value`'s setter is exactly `SetValue(value, SyncType.Broadcast)`. `SetValue`
+defaults to *not* syncing, which is the subtle difference between the two.
+
+`NetSync` has no idea when the innards of a complex value change, so mutate and
+then push:
+
+```csharp
+property.Value.SomeField = "hi";
+property.Push();
+```
+
+### Sync types
+
+| `SyncType` | Meaning |
+| --- | --- |
+| `Broadcast` | Send to everyone allowed by the transfer type and the distance limit. |
+| `Post` | Send to one specific player. Used for fetch replies and `Push(steamId)`. |
+| `Fetch` | Ask the other side to send its value back. Payload is ignored on arrival. |
+| `None` | Set locally, send nothing. |
+
+On the receive side `Post` and `Broadcast` are identical: both apply the value.
+
+### Transfer types
+
+| `TransferType` | Client may send | Server may send |
+| --- | --- | --- |
+| `Both` | yes | yes |
+| `ServerToClient` | no (except `Fetch`) | yes |
+| `ClientToServer` | yes | no |
+
+`Fetch` is exempt from the client-side check so a read-only client can still ask
+for the authoritative value.
+
+Note that these are *send-side* checks only. A `ClientToServer` property that
+somehow receives an update from the server still applies it, and a server always
+re-broadcasts values it receives regardless of transfer type.
+
+## Events
+
+```csharp
+property.ValueChanged          += (oldValue, newValue) => { };
+property.ValueChangedByNetwork += (oldValue, newValue, senderSteamId) => { };
+property.BeforeFetchRequestResponse += senderSteamId => { };
+```
+
+* `ValueChanged` fires on **every** assignment — local or remote, and even when
+  the new value equals the old one. It does *not* fire for `Push()`, which sends
+  without changing anything.
+* `ValueChangedByNetwork` fires only for values arriving over the network, after
+  `ValueChanged`. `senderSteamId` is 0 for updates originating on a dedicated
+  server.
+* `BeforeFetchRequestResponse` fires on the machine *answering* a fetch, just
+  before the reply is built — use it to refresh the value first. Edits made in
+  the handler are visible in the reply.
+
+## Sync on load
+
+With `syncOnLoad: true` (the default) the property asks for the current value as
+soon as it can:
+
+* **Session-scoped**: immediately, in the constructor.
+* **Entity-scoped**: on the entity's `AddedToScene` event, then it unsubscribes.
+  This matters — properties declared in a block's `Init` would otherwise fetch
+  before the grid exists on the client.
+
+Servers never fetch (`Fetch()` returns immediately when
+`MyAPIGateway.Multiplayer.IsServer`), so this is purely a client-side seeding
+mechanism.
+
+## Distance limiting
+
+With `limitToSyncDistance: true` (the default) an **entity** property's updates
+go through the positional send: only players within
+`MyAPIGateway.Session.SessionSettings.SyncDistance` of the entity receive them.
+Session-scoped properties have no position, so they always broadcast regardless
+of this flag.
+
+The trade-off: a player who was out of range while a value changed does not get
+a late update — they only re-sync if something triggers a fetch or another push.
+
+## Things that silently do nothing
+
+`SendValue` returns early, without sending, when:
+
+| Condition | Logged? |
+| --- | --- |
+| `NetworkAPI` was never initialized | error, always |
+| `SyncType.None` | only with `LogNetworkTraffic` |
+| The transfer type forbids this direction | only with `LogNetworkTraffic` |
+| `MyAPIGateway.Session.OnlineMode == OFFLINE` | only with `LogNetworkTraffic` |
+| `Value` is `null` | only with `LogNetworkTraffic` |
+
+In every case the local value is still updated and `ValueChanged` still fires;
+only the network send is skipped. Turn on `NetworkAPI.LogNetworkTraffic = true`
+when a value is not arriving — the log names the property and the reason.
+
+### Null values
+
+Two separate problems make a `null` value a trap:
+
+1. `SetValue` locks on the current value. If it is `null` the assignment throws
+   `ArgumentNullException`, so `new NetSync<string>(this, TransferType.Both)`
+   followed by `property.Value = "x"` **throws**.
+2. A `null` value is never transmitted, so such a property cannot even send its
+   sync-on-load fetch.
+
+Always give reference-typed properties a non-null starting value:
+
+```csharp
+new NetSync<string>(this, TransferType.Both, string.Empty);
+```
+
+## Lifetime
+
+Closing an entity does not fully unregister its properties — see
+[known-issues.md](known-issues.md#closing-an-entity-leaks-and-can-evict-the-wrong-property).
+Both registries are cleared when the world unloads and the statics go away.
