@@ -240,36 +240,66 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
-		public void ClosingAnEntity_UnregistersTheMatchingPropertyId()
+		public void ClosingAnEntity_ReleasesItsProperties()
 		{
-			// Note the asymmetry: Entity_OnClose only touches PropertyById, which
-			// entity-scoped properties never live in. See docs/known-issues.md.
+			// This used to leak: the close handler removed an id from
+			// PropertyById, where entity properties never live, leaving the
+			// entity and its property list referenced for the whole session.
 			GivenClient();
 			MyEntity entity = Game.CreateEntity();
-			NetSync<int> property = new NetSync<int>(entity, TransferType.Both);
+			new NetSync<int>(entity, TransferType.Both);
+			new NetSync<int>(entity, TransferType.Both);
 
 			entity.Close();
 
-			Assert.True(NetSync.PropertiesByEntity.ContainsKey(entity));
-			Assert.Contains(property, NetSync.PropertiesByEntity[entity]);
+			Assert.Empty(NetSync.PropertiesByEntity);
 		}
 
 		[Fact]
-		public void ClosingAnEntity_CanEvictAnUnrelatedSessionProperty()
+		public void ClosingAnEntity_UnsubscribesFromItsEvents()
 		{
-			// The entity property's Id is a per-entity index (0, 1, 2 ...) while
-			// session property ids come from a global counter (1, 2, 3 ...).
-			// The two key spaces collide inside PropertyById on close.
+			GivenClient();
+			MyEntity entity = Game.CreateEntity();
+			new NetSync<int>(entity, TransferType.Both);
+
+			entity.Close();
+
+			Assert.Equal(0, entity.OnCloseSubscriberCount);
+			Assert.Equal(0, entity.AddedToSceneSubscriberCount);
+		}
+
+		[Fact]
+		public void ClosingAnEntity_LeavesSessionPropertiesAlone()
+		{
+			// Entity property ids are per-entity indices (0, 1, 2 ...) and
+			// session property ids come from a global counter that also starts
+			// at 1. Closing an entity used to evict whichever session property
+			// held the colliding id.
 			GivenClient();
 			NetSync<int> sessionProperty = new NetSync<int>(new TestSessionComponent(), TransferType.Both);
 			Assert.Equal(1, sessionProperty.Id);
 
 			MyEntity entity = Game.CreateEntity();
 			new NetSync<int>(entity, TransferType.Both);   // Id 0
-			new NetSync<int>(entity, TransferType.Both);   // Id 1 -- collides
+			new NetSync<int>(entity, TransferType.Both);   // Id 1, same number
 			entity.Close();
 
-			Assert.False(NetSync.PropertyById.ContainsKey(1));
+			Assert.True(NetSync.PropertyById.ContainsKey(1));
+			Assert.Same(sessionProperty, NetSync.PropertyById[1]);
+		}
+
+		[Fact]
+		public void UpdatesForAClosedEntity_AreIgnored()
+		{
+			GivenClient();
+			MyEntity entity = Game.CreateEntity();
+			NetSync<int> property = new NetSync<int>(entity, TransferType.Both, 5, syncOnLoad: false);
+			entity.Close();
+
+			Receive(EncodePropertyPacket(0, entity.EntityId, SyncType.Post, 42));
+
+			Assert.Equal(5, property.Value);
+			Assert.True(LoggedInfo("Entity not registered in dictionary"));
 		}
 
 		[Fact]

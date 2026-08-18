@@ -187,16 +187,39 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
-		public void SetValue_OnANullValuedProperty_Throws()
+		public void SetValue_OnANullValuedProperty_Works()
 		{
-			// Documented defect: SetValue locks on the *current* value, and
-			// Monitor.Enter(null) throws. A reference-typed property left at its
-			// default (the documented `new NetSync<string>(this, TransferType.Both)`
-			// pattern) therefore blows up on first assignment.
+			// This used to throw: SetValue locked on the value it was replacing,
+			// and Monitor.Enter(null) throws. The lock protected nothing (it
+			// boxed a fresh object for value types and the getter was unlocked),
+			// so it is gone.
 			GivenClient();
 			NetSync<string> property = new NetSync<string>(new TestSessionComponent(), TransferType.Both, syncOnLoad: false);
+			Game.ClearTraffic();
 
-			Assert.Throws<ArgumentNullException>(() => property.Value = "hello");
+			property.Value = "hello";
+
+			Assert.Equal("hello", property.Value);
+			Assert.Single(Game.Sent);
+		}
+
+		[Fact]
+		public void AssigningAValueTypeDoesNotBoxOnEveryAssignment()
+		{
+			// Regression guard for the same lock: `lock (_value)` boxed T on
+			// every single assignment.
+			GivenClient();
+			NetSync<int> property = Property();
+			property.SetValue(1);
+
+			long before = GC.GetAllocatedBytesForCurrentThread();
+			for (int i = 0; i < 1000; i++)
+			{
+				property.SetValue(i);
+			}
+
+			long perAssignment = (GC.GetAllocatedBytesForCurrentThread() - before) / 1000;
+			Assert.Equal(0, perAssignment);
 		}
 
 		[Fact]
@@ -269,18 +292,31 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
-		public void ANullValuedProperty_CannotEvenFetch()
+		public void ANullValuedProperty_CanStillFetch()
 		{
-			// SendValue's null guard runs for every sync type, so a reference
-			// typed property left at its default never sends its sync-on-load
-			// fetch either.
+			// A fetch is a request; the null guard only applies to sync types
+			// that actually carry a value, so a property sitting at its default
+			// can still ask the server for one.
 			GivenClient();
 			NetSync<string> property = new NetSync<string>(new TestSessionComponent(), TransferType.Both, syncOnLoad: false);
 			Game.ClearTraffic();
 
 			property.Fetch();
 
-			Assert.Empty(Game.Sent);
+			Assert.Equal(SyncType.Fetch, TheOnlySyncDataSent().SyncType);
+		}
+
+		[Fact]
+		public void AFetchCarriesNoPayload()
+		{
+			// The receiver ignores a fetch's data, so nothing is encoded for it.
+			GivenClient();
+			NetSync<string> property = new NetSync<string>(new TestSessionComponent(), TransferType.Both, "a value worth several bytes", syncOnLoad: false);
+			Game.ClearTraffic();
+
+			property.Fetch();
+
+			Assert.Null(TheOnlySyncDataSent().Data);
 		}
 
 		// -------------------------------------------------------------------

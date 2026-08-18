@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using VRage.Game;
 using VRage.Game.Components;
 using VRage.Game.Entity;
+using VRage.Game.ModAPI;
 using VRage.ModAPI;
 using VRage.Utils;
 
@@ -192,21 +193,21 @@ namespace SENetworkAPI
 				Entity = entity;
 				Entity.OnClose += Entity_OnClose;
 
-				if (PropertiesByEntity.ContainsKey(Entity))
+				// The lookup has to happen inside the lock: outside it, two
+				// threads could both miss and both try to Add the same entity.
+				lock (locker)
 				{
-					lock (locker)
+					List<NetSync> properties;
+					if (PropertiesByEntity.TryGetValue(Entity, out properties))
 					{
-						PropertiesByEntity[Entity].Add(this);
-						Id = PropertiesByEntity[Entity].Count - 1;
+						properties.Add(this);
+						Id = properties.Count - 1;
 					}
-				}
-				else
-				{
-					lock (locker)
+					else
 					{
 						PropertiesByEntity.Add(Entity, new List<NetSync> { this });
 						Id = 0;
-					}	
+					}
 				}
 			}
 			else
@@ -247,7 +248,17 @@ namespace SENetworkAPI
 
 		private void Entity_OnClose(MyEntity entity)
 		{
-			PropertyById.Remove(Id);
+			// Entity scoped properties live in PropertiesByEntity, never in
+			// PropertyById. Removing the entity's entry drops the whole property
+			// list along with the strong reference to the entity itself, which
+			// used to be held for the rest of the session.
+			entity.OnClose -= Entity_OnClose;
+			entity.AddedToScene -= SyncOnAddedToScene;
+
+			lock (locker)
+			{
+				PropertiesByEntity.Remove(entity);
+			}
 		}
 
 		/// <summary>
@@ -256,14 +267,10 @@ namespace SENetworkAPI
 		public void SetValue(T val, SyncType syncType = SyncType.None)
 		{
 			T oldval = _value;
-			lock (_value)
-			{
-				_value = val;
-			}
+			_value = val;
 
 			SendValue(syncType);
 			ValueChanged?.Invoke(oldval, val);
-
 		}
 
 		/// <summary>
@@ -274,19 +281,19 @@ namespace SENetworkAPI
 			try
 			{
 				T oldval = _value;
-				lock (_value)
-				{
-					_value = MyAPIGateway.Utilities.SerializeFromBinary<T>(data);
+				_value = MyAPIGateway.Utilities.SerializeFromBinary<T>(data);
 
-					if (NetworkAPI.LogNetworkTraffic)
-					{
-						MyLog.Default.Info($"[NetworkAPI] {Descriptor()} New value: {oldval} --- Old value: {_value}");
-					}
+				if (NetworkAPI.LogNetworkTraffic)
+				{
+					MyLog.Default.Info($"[NetworkAPI] {Descriptor()} Old value: {oldval} --- New value: {_value}");
 				}
 
 				if (MyAPIGateway.Multiplayer.IsServer)
 				{
-					SendValue();
+					// Relay the bytes we were handed instead of serializing the
+					// value again: nothing has touched it since it was decoded,
+					// so the two are identical.
+					SendValue(SyncType.Broadcast, ulong.MinValue, data);
 				}
 
 				ValueChanged?.Invoke(oldval, _value);
@@ -301,7 +308,11 @@ namespace SENetworkAPI
 		/// <summary>
 		/// sends the value across the network
 		/// </summary>
-		private void SendValue(SyncType syncType = SyncType.Broadcast, ulong sendTo = ulong.MinValue)
+		/// <param name="serializedValue">
+		/// Already encoded bytes for the current value, when the caller has them.
+		/// Saves re-serializing on the server's relay path.
+		/// </param>
+		private void SendValue(SyncType syncType = SyncType.Broadcast, ulong sendTo = ulong.MinValue, byte[] serializedValue = null)
 		{
 			try
 			{
@@ -333,7 +344,9 @@ namespace SENetworkAPI
 					return;
 				}
 
-				if (MyAPIGateway.Session.OnlineMode == MyOnlineModeEnum.OFFLINE)
+				IMySession session = MyAPIGateway.Session;
+
+				if (session != null && session.OnlineMode == MyOnlineModeEnum.OFFLINE)
 				{
 					if (NetworkAPI.LogNetworkTraffic)
 					{
@@ -343,7 +356,12 @@ namespace SENetworkAPI
 					return;
 				}
 
-				if (Value == null)
+				// A fetch is a request, not an update. The receiver ignores the
+				// payload, so there is no reason to encode and ship the value -
+				// and no reason a property sitting at null cannot ask for one.
+				bool carriesValue = syncType != SyncType.Fetch;
+
+				if (carriesValue && _value == null)
 				{
 					if (NetworkAPI.LogNetworkTraffic)
 					{
@@ -356,14 +374,15 @@ namespace SENetworkAPI
 				SyncData data = new SyncData() {
 					Id = Id,
 					EntityId = (Entity != null) ? Entity.EntityId : 0,
-					Data = MyAPIGateway.Utilities.SerializeToBinary(_value),
+					Data = carriesValue ? (serializedValue ?? MyAPIGateway.Utilities.SerializeToBinary(_value)) : null,
 					SyncType = syncType
 				};
 
 				ulong id = ulong.MinValue;
-				if (MyAPIGateway.Session?.LocalHumanPlayer != null)
+				IMyPlayer localPlayer = session?.LocalHumanPlayer;
+				if (localPlayer != null)
 				{
-					id = MyAPIGateway.Session.LocalHumanPlayer.SteamUserId;
+					id = localPlayer.SteamUserId;
 				}
 
 				if (id == sendTo && id != ulong.MinValue)
@@ -411,13 +430,11 @@ namespace SENetworkAPI
 			NetSync property;
 			if (pack.EntityId == 0)
 			{
-				if (!PropertyById.ContainsKey(pack.Id))
+				if (!PropertyById.TryGetValue(pack.Id, out property))
 				{
 					MyLog.Default.Info($"[NetworkAPI] id not registered in dictionary 'PropertyById'");
 					return;
 				}
-
-				property = PropertyById[pack.Id];
 			}
 			else
 			{
@@ -429,15 +446,14 @@ namespace SENetworkAPI
 					return;
 				}
 
-				if (!PropertiesByEntity.ContainsKey(entity))
+				List<NetSync> properties;
+				if (!PropertiesByEntity.TryGetValue(entity, out properties))
 				{
 					MyLog.Default.Info($"[NetworkAPI] Entity not registered in dictionary 'PropertiesByEntity'");
 					return;
 				}
 
-				List<NetSync> properties = PropertiesByEntity[entity];
-
-				if (pack.Id >= properties.Count)
+				if (pack.Id < 0 || pack.Id >= properties.Count)
 				{
 					MyLog.Default.Info($"[NetworkAPI] property index out of range");
 					return;
