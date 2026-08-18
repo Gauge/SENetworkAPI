@@ -4,7 +4,18 @@
 dotnet test tests/SENetworkAPI.Tests
 ```
 
-192 tests, no game install required, about a second to run.
+202 tests, no game install required, about a second to run.
+
+If you have the game installed, there is a second check that needs no test
+runner — it compiles the shipped sources against the real assemblies:
+
+```bash
+dotnet build tests/GameContractCheck
+dotnet build tests/GameContractCheck -p:GameBin=/path/to/SpaceEngineers/Bin64
+```
+
+Nothing runs; the compiler is the test. It catches API drift and surfaces
+obsolete-API warnings, which is the one thing the stub harness cannot see.
 
 ## Why there is a stub assembly
 
@@ -27,12 +38,36 @@ production sources compile against it unmodified:
 | `MyCompression` | payload compression (GZip here) |
 | `MyLog.Default` | the game log, retained in memory so tests can assert on it |
 
-Serialization uses real protobuf-net — the same library the game uses — with a
-one-field envelope so that bare primitives round-trip.
+## How faithful is it?
 
-If you extend the API and touch a new piece of the ModAPI, add it to the stubs.
-The stub is deliberately dumb: public settable state, no behaviour beyond what
-the real call does.
+The stub surface was checked against the shipped assemblies by metadata
+inspection and decompilation, and matches them on the things that matter:
+
+* **Namespaces and signatures.** The ModAPI interfaces are declared where the
+  game declares them (`VRage.Game.ModAPI`, `VRage.ModAPI`); only `MyAPIGateway`
+  lives in `Sandbox.ModAPI`. `SessionSettings` is a
+  `MyObjectBuilder_SessionSettings`, `MyEntity.OnClose`/`AddedToScene` are
+  `Action<MyEntity>`, `SyncDistance` is an `int` field, and the send calls
+  return `bool`.
+* **Serialization.** `StubSerializer` is the same two lines as
+  `MyAPIUtilities.SerializeToBinary`: a bare `Serializer.Serialize` with no
+  wrapper. The fork the game ships and the stock protobuf-net package produce
+  identical bytes for root-level values (int 2, float 5, `"hello"` 7).
+* **Transport rules.** `FakeMultiplayer` reproduces the two behaviours of
+  `MyMultiplayerBase` a mod can actually observe: unreliable messages over 1024
+  bytes are refused, and a message addressed to the local player is delivered
+  back into the local handlers.
+
+Known, deliberate divergences: compression is GZip rather than Keen's block
+compressor (same contract — bytes in, smaller bytes out, round-trips); `MyLog`
+retains lines in memory so tests can assert on them; and a few members have
+setters the real types do not (`MyGameLogicComponent.Entity`,
+`MyCubeBlock.CubeGrid`) so tests can construct scenarios.
+
+If you extend the API and touch a new piece of the ModAPI, add it to the stubs —
+and check the real signature first, e.g. with `ilspycmd` against `Bin64`. The
+stub is deliberately dumb: public settable state, no behaviour beyond what the
+real call does.
 
 ## How the tests are wired
 
@@ -102,13 +137,15 @@ and deliver those bytes — see `IntegrationTests`.
 | `NetSyncValueTests` | value/events, sync types, transfer gating, packet shape, send guards |
 | `NetSyncNetworkTests` | receive routing, re-broadcast, routing failures, fetch replies |
 | `TimingTests` | `GetDeltaMilliseconds` / `GetDeltaFrames` |
+| `SenderIdentityTests` | the trust model: unverified sender ids, arrival-side checks |
 | `IntegrationTests` | full client↔server exchanges |
 
 ## Not covered
 
-* Real Space Engineers serialization and compression (protobuf-net and GZip
-  stand in for them).
-* Real network transport — ordering, loss, MTU and the game's own reliability
-  layer.
+* Keen's block compressor (GZip stands in for it).
+* Real network transport — ordering, loss, latency. Only the two engine rules
+  above are modelled; delivery is otherwise instant and perfect.
+* Anything requiring a running session: whether a component is created on a
+  dedicated server, HUD rendering, actual Steam identities.
 * Thread safety. The suite is single-threaded; see
   [known-issues.md](known-issues.md#lock-_value-does-not-synchronise-anything).
