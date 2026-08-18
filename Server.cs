@@ -10,6 +10,19 @@ namespace SENetworkAPI
 {
 	public class Server : NetworkAPI
 	{
+		// The positional send runs on every update of every property that limits
+		// itself to sync distance, so its range filters are cached delegates
+		// reading their parameters from fields rather than lambdas that capture
+		// them - a closure allocation per send otherwise. The fields are only
+		// read while GetPlayers is running, which cannot call back into a mod.
+		private readonly Func<IMyPlayer, bool> m_inRangeFilter;
+		private readonly Func<IMyPlayer, bool> m_singleRecipientFilter;
+		private Vector3D m_filterPoint;
+		private double m_filterRadiusSquared;
+		private ulong m_filterExcluded;
+		private ulong m_filterWanted;
+
+
 		/// <summary>
 		/// Server class contains a few server only feature beond what is inharited from the NetworkAPI
 		/// </summary>
@@ -17,6 +30,21 @@ namespace SENetworkAPI
 		/// <param name="keyword">identifies what chat entries should be captured and sent to the server</param>
 		public Server(ushort comId, string modName, string keyword = null) : base(comId, modName, keyword)
 		{
+			m_inRangeFilter = IsInRange;
+			m_singleRecipientFilter = IsWantedRecipient;
+		}
+
+		private bool IsInRange(IMyPlayer player)
+		{
+			// Distance first: it rejects most players with a single interface
+			// call, where testing the steam id first costs an extra call for
+			// every player that is out of range anyway.
+			return (player.GetPosition() - m_filterPoint).LengthSquared() < m_filterRadiusSquared && player.SteamUserId != m_filterExcluded;
+		}
+
+		private bool IsWantedRecipient(IMyPlayer player)
+		{
+			return player.SteamUserId == m_filterWanted;
 		}
 
 		/// <summary>
@@ -60,9 +88,34 @@ namespace SENetworkAPI
 		/// <param name="isReliable">Enture delivery of the packet</param>
 		public void SendCommandTo(ulong[] steamIds, string commandString, string message = null, byte[] data = null, DateTime? sent = null, bool isReliable = true)
 		{
-			foreach (ulong id in steamIds)
+			if (steamIds == null || steamIds.Length == 0)
 			{
-				SendCommand(new Command() { SteamId = id, CommandString = commandString, Message = message, Data = data, Timestamp = (sent == null) ? DateTime.UtcNow.Ticks : sent.Value.Ticks }, id, isReliable);
+				return;
+			}
+
+			// One command object, compressed once, re-addressed per recipient.
+			// Building it inside the loop used to re-compress a large payload
+			// for every player it was sent to.
+			Command cmd = new Command() { CommandString = commandString, Message = message, Data = data, Timestamp = (sent == null) ? DateTime.UtcNow.Ticks : sent.Value.Ticks };
+			Compress(cmd);
+
+			for (int i = 0; i < steamIds.Length; i++)
+			{
+				cmd.SteamId = steamIds[i];
+				SendCommand(cmd, steamIds[i], isReliable);
+			}
+		}
+
+		/// <summary>
+		/// Compresses the payload if it is worth it. Safe to call more than once
+		/// on the same command; only the first call does anything.
+		/// </summary>
+		private static void Compress(Command cmd)
+		{
+			if (!cmd.IsCompressed && cmd.Data != null && cmd.Data.Length > CompressionThreshold)
+			{
+				cmd.Data = MyCompression.Compress(cmd.Data);
+				cmd.IsCompressed = true;
 			}
 		}
 
@@ -74,11 +127,7 @@ namespace SENetworkAPI
 		/// <param name="isReliable">Make sure the data arrives</param>
 		internal override void SendCommand(Command cmd, ulong steamId = ulong.MinValue, bool isReliable = true)
 		{
-			if (cmd.Data != null && cmd.Data.Length > CompressionThreshold)
-			{
-				cmd.Data = MyCompression.Compress(cmd.Data);
-				cmd.IsCompressed = true;
-			}
+			Compress(cmd);
 
 			if (!string.IsNullOrWhiteSpace(cmd.Message) && MyAPIGateway.Multiplayer.IsServer && MyAPIGateway.Session != null)
 			{
@@ -112,11 +161,7 @@ namespace SENetworkAPI
 		/// <param name="isReliable">Make sure the data arrives</param>
 		internal override void SendCommand(Command cmd, Vector3D point, double radius = 0, ulong steamId = ulong.MinValue, bool isReliable = true)
 		{
-			if (cmd.Data != null && cmd.Data.Length > CompressionThreshold)
-			{
-				cmd.Data = MyCompression.Compress(cmd.Data);
-				cmd.IsCompressed = true;
-			}
+			Compress(cmd);
 
 			if (radius == 0)
 			{
@@ -124,15 +169,28 @@ namespace SENetworkAPI
 			}
 
 			List<IMyPlayer> players = new List<IMyPlayer>();
+
 			if (steamId == ulong.MinValue)
 			{
-				MyAPIGateway.Players.GetPlayers(players, (p) => (p.GetPosition() - point).LengthSquared() < (radius * radius) && p.SteamUserId != cmd.SteamId);
+				m_filterPoint = point;
+				m_filterRadiusSquared = radius * radius;
+				m_filterExcluded = cmd.SteamId;
+				MyAPIGateway.Players.GetPlayers(players, m_inRangeFilter);
 			}
 			else
 			{
-				MyAPIGateway.Players.GetPlayers(players, p => p.SteamUserId == steamId);
+				m_filterWanted = steamId;
+				MyAPIGateway.Players.GetPlayers(players, m_singleRecipientFilter);
 			}
 
+			Transmit(cmd, players, radius, isReliable);
+		}
+
+		/// <summary>
+		/// Serializes the command once and hands a copy to each recipient.
+		/// </summary>
+		private void Transmit(Command cmd, List<IMyPlayer> players, double radius, bool isReliable)
+		{
 			if (!string.IsNullOrWhiteSpace(cmd.Message) && MyAPIGateway.Multiplayer.IsServer && MyAPIGateway.Session != null)
 			{
 				MyAPIGateway.Utilities.ShowMessage(ModName, cmd.Message);
@@ -146,9 +204,9 @@ namespace SENetworkAPI
 				MyLog.Default.Info($"[NetworkAPI] _TRANSMITTING_ Bytes: {packet.Length}  Command: {cmd.CommandString}  To: {players.Count} Users within {radius}m");
 			}
 
-			foreach (IMyPlayer player in players)
+			for (int i = 0; i < players.Count; i++)
 			{
-				MyAPIGateway.Multiplayer.SendMessageTo(ComId, packet, player.SteamUserId, isReliable);
+				MyAPIGateway.Multiplayer.SendMessageTo(ComId, packet, players[i].SteamUserId, isReliable);
 			}
 		}
 

@@ -1,5 +1,6 @@
 using System;
 using SEStubs;
+using VRage.Game.Entity;
 using Xunit;
 
 namespace SENetworkAPI.Tests
@@ -7,6 +8,8 @@ namespace SENetworkAPI.Tests
 	/// <summary>Construction, Init(), Close()/Dispose() and handler registration.</summary>
 	public class LifecycleTests : NetworkTestBase
 	{
+		private class UnloadTestComponent : VRage.Game.Components.MySessionComponentBase { }
+
 		[Fact]
 		public void Init_OnServer_CreatesServerInstance()
 		{
@@ -139,6 +142,36 @@ namespace SENetworkAPI.Tests
 			NetworkAPI.Dispose();
 
 			Assert.Null(NetworkAPI.Instance);
+		}
+
+		[Fact]
+		public void Dispose_ClearsThePropertyRegistries()
+		{
+			// These are static and survive a world unload, so without an explicit
+			// clear the next session inherits the previous one's properties.
+			GivenServer();
+			MyEntity entity = Game.CreateEntity();
+			new NetSync<int>(entity, TransferType.Both, syncOnLoad: false);
+			new NetSync<int>(new UnloadTestComponent(), TransferType.Both, syncOnLoad: false);
+
+			NetworkAPI.Dispose();
+
+			Assert.Empty(NetSync.PropertiesByEntity);
+			Assert.Empty(NetSync.PropertyById);
+		}
+
+		[Fact]
+		public void Dispose_ResetsPropertyIdsSoTheNextSessionStartsFromOne()
+		{
+			GivenServer();
+			new NetSync<int>(new UnloadTestComponent(), TransferType.Both, syncOnLoad: false);
+			new NetSync<int>(new UnloadTestComponent(), TransferType.Both, syncOnLoad: false);
+
+			NetworkAPI.Dispose();
+			GivenServer();
+			NetSync<int> first = new NetSync<int>(new UnloadTestComponent(), TransferType.Both, syncOnLoad: false);
+
+			Assert.Equal(1, first.Id);
 		}
 
 		[Fact]

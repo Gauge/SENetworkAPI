@@ -42,6 +42,22 @@ namespace SENetworkAPI
 		}
 
 		/// <summary>
+		/// Drops every registered property. Called when the session unloads:
+		/// these registries are static, so without this they would hold on to
+		/// the previous world's properties - and the entities they point at -
+		/// for as long as the game process lives.
+		/// </summary>
+		internal static void ClearRegistries()
+		{
+			lock (locker)
+			{
+				PropertiesByEntity.Clear();
+				PropertyById.Clear();
+				generatorId = 1;
+			}
+		}
+
+		/// <summary>
 		/// The allowed network communication direction
 		/// </summary>
 		public TransferType TransferType { get; internal set; }

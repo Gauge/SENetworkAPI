@@ -1,6 +1,7 @@
 ﻿using Sandbox.ModAPI;
 using System;
 using VRage;
+using VRage.Game.ModAPI;
 using VRage.Utils;
 using VRageMath;
 
@@ -29,9 +30,12 @@ namespace SENetworkAPI
 		/// <param name="isReliable">Enture delivery of the packet</param>
 		public override void SendCommand(string commandString, string message = null, byte[] data = null, DateTime? sent = null, ulong steamId = ulong.MinValue, bool isReliable = true)
 		{
-			if (MyAPIGateway.Session?.Player != null)
+			IMyPlayer player = MyAPIGateway.Session?.Player;
+
+			if (player != null)
 			{
-				SendCommand(new Command() { CommandString = commandString, Message = message, Data = data, Timestamp = (sent == null) ? DateTime.UtcNow.Ticks : sent.Value.Ticks, SteamId = MyAPIGateway.Session.Player.SteamUserId }, MyAPIGateway.Session.Player.SteamUserId, isReliable);
+				ulong steamUserId = player.SteamUserId;
+				SendCommand(new Command() { CommandString = commandString, Message = message, Data = data, Timestamp = (sent == null) ? DateTime.UtcNow.Ticks : sent.Value.Ticks, SteamId = steamUserId }, steamUserId, isReliable);
 			}
 			else
 			{
@@ -47,7 +51,9 @@ namespace SENetworkAPI
 		/// <param name="isReliable">Makes sure the message is recieved by the server</param>
 		internal override void SendCommand(Command cmd, ulong steamId = ulong.MinValue, bool isReliable = true)
 		{
-			if (cmd.Data != null && cmd.Data.Length > CompressionThreshold)
+			// Guarded so a command that is sent more than once is not compressed
+			// on top of itself, which the receiver would only unwrap once.
+			if (!cmd.IsCompressed && cmd.Data != null && cmd.Data.Length > CompressionThreshold)
 			{
 				cmd.Data = MyCompression.Compress(cmd.Data);
 				cmd.IsCompressed = true;

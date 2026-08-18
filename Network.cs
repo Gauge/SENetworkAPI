@@ -350,6 +350,11 @@ namespace SENetworkAPI
 			}
 
 			Instance = null;
+
+			// The property registries are static and outlive the session. Left
+			// alone they keep every property, and every entity that owned one,
+			// alive across a world reload.
+			NetSync.ClearRegistries();
 		}
 
 		/// <summary>
