@@ -268,6 +268,21 @@ namespace SENetworkAPI.Tests
 			Assert.True(LoggedError("Cannot transmit null value"));
 		}
 
+		[Fact]
+		public void ANullValuedProperty_CannotEvenFetch()
+		{
+			// SendValue's null guard runs for every sync type, so a reference
+			// typed property left at its default never sends its sync-on-load
+			// fetch either.
+			GivenClient();
+			NetSync<string> property = new NetSync<string>(new TestSessionComponent(), TransferType.Both, syncOnLoad: false);
+			Game.ClearTraffic();
+
+			property.Fetch();
+
+			Assert.Empty(Game.Sent);
+		}
+
 		// -------------------------------------------------------------------
 		//  Transfer direction gating
 		// -------------------------------------------------------------------

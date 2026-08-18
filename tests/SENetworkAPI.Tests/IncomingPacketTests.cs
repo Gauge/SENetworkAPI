@@ -198,6 +198,24 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
+		public void APacketWithNoCommandString_DeliversNothingEvenWhenItCarriesData()
+		{
+			// `null` command strings are reserved for chat relays, and there is
+			// no way to register a handler for them -- RegisterNetworkCommand
+			// rejects null. Data sent this way is unreachable.
+			NetworkAPI api = GivenClient();
+			bool anyCallback = false;
+			bool anyEvent = false;
+			api.RegisterNetworkCommand("update", (s, c, d, t) => anyCallback = true);
+			api.OnCommandRecived += (s, c, d, t) => anyEvent = true;
+
+			Receive(EncodeCommandPacket(null, data: new byte[] { 1, 2, 3 }));
+
+			Assert.False(anyCallback);
+			Assert.False(anyEvent);
+		}
+
+		[Fact]
 		public void CompressedPacket_IsDecompressedBeforeDispatch()
 		{
 			NetworkAPI api = GivenClient();
