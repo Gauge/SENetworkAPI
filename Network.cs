@@ -28,8 +28,12 @@ namespace SENetworkAPI
 
 		internal bool UsingTextCommands => Keyword != null;
 
-		internal Dictionary<string, Action<ulong, string, byte[], DateTime>> NetworkCommands = new Dictionary<string, Action<ulong, string, byte[], DateTime>>();
-		internal Dictionary<string, Action<string>> ChatCommands = new Dictionary<string, Action<string>>();
+		// Ordinal, case insensitive: lookups no longer have to lower-case the
+		// incoming string (an allocation on every packet), registration keeps the
+		// caller's spelling, and "Update" now finds the handler registered as
+		// "update" instead of silently missing it.
+		internal Dictionary<string, Action<ulong, string, byte[], DateTime>> NetworkCommands = new Dictionary<string, Action<ulong, string, byte[], DateTime>>(StringComparer.OrdinalIgnoreCase);
+		internal Dictionary<string, Action<string>> ChatCommands = new Dictionary<string, Action<string>>(StringComparer.OrdinalIgnoreCase);
 
 		/// <summary>
 		/// Event driven client, server syncing API. 
@@ -41,7 +45,7 @@ namespace SENetworkAPI
 		{
 			ComId = comId;
 			ModName = (modName == null) ? string.Empty : modName;
-			Keyword = (keyword != null) ? keyword.ToLower() : null;
+			Keyword = (keyword != null) ? keyword.ToLowerInvariant() : null;
 
 			if (UsingTextCommands)
 			{
@@ -62,29 +66,73 @@ namespace SENetworkAPI
 		/// <param name="sendToOthers">should be shown normally in global chat</param>
 		private void HandleChatInput(string messageText, ref bool sendToOthers)
 		{
-			string[] args = messageText.ToLower().Split(' ');
-			if (args[0] != Keyword)
+			// Every line typed by the player reaches every mod's handler, so the
+			// common case - a line that is not ours - must not allocate at all.
+			if (!StartsWithKeyword(messageText))
 				return;
+
 			sendToOthers = false;
 
 			string arguments = messageText.Substring(Keyword.Length).Trim(' ');
+			string command = SecondToken(messageText);
 
-			// Meh... this is kinda yucky
-			if (args.Length == 1 && ChatCommands.ContainsKey(string.Empty))
+			Action<string> callback;
+			if (command == null)
 			{
-				ChatCommands[string.Empty]?.Invoke(string.Empty);
-			}
-			else if (args.Length > 1 && ChatCommands.ContainsKey(args[1]))
-			{
-				ChatCommands[args[1]]?.Invoke(arguments.Substring(args[1].Length).Trim(' '));
-			}
-			else
-			{
-				if (!MyAPIGateway.Utilities.IsDedicated)
+				// The keyword on its own maps to the empty command.
+				if (ChatCommands.TryGetValue(string.Empty, out callback))
 				{
-					MyAPIGateway.Utilities.ShowMessage(ModName, "Command not recognized.");
+					callback?.Invoke(string.Empty);
+					return;
 				}
 			}
+			else if (ChatCommands.TryGetValue(command, out callback))
+			{
+				callback?.Invoke(arguments.Substring(command.Length).Trim(' '));
+				return;
+			}
+
+			if (!MyAPIGateway.Utilities.IsDedicated)
+			{
+				MyAPIGateway.Utilities.ShowMessage(ModName, "Command not recognized.");
+			}
+		}
+
+		/// <summary>
+		/// True when the message's first whitespace delimited word is the keyword.
+		/// Allocation free: no lower-casing, no splitting.
+		/// </summary>
+		private bool StartsWithKeyword(string messageText)
+		{
+			if (messageText == null || Keyword == null)
+				return false;
+
+			int length = Keyword.Length;
+
+			if (messageText.Length < length)
+				return false;
+
+			// "/modding" must not trigger the "/mod" keyword.
+			if (messageText.Length > length && messageText[length] != ' ')
+				return false;
+
+			return string.Compare(messageText, 0, Keyword, 0, length, StringComparison.OrdinalIgnoreCase) == 0;
+		}
+
+		/// <summary>
+		/// The word following the keyword, or null when the message is just the
+		/// keyword. Callers have already checked <see cref="StartsWithKeyword"/>.
+		/// </summary>
+		private string SecondToken(string messageText)
+		{
+			int start = Keyword.Length + 1;
+
+			if (start > messageText.Length)
+				return null;
+
+			int end = messageText.IndexOf(' ', start);
+
+			return (end < 0) ? messageText.Substring(start) : messageText.Substring(start, end - start);
 		}
 
 		/// <summary>
@@ -134,13 +182,20 @@ namespace SENetworkAPI
 
 					if (cmd.CommandString != null)
 					{
-						OnCommandRecived?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data, new DateTime(cmd.Timestamp));
+						DateTime sent = new DateTime(cmd.Timestamp);
 
-						string command = cmd.CommandString.Split(' ')[0];
+						OnCommandRecived?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data, sent);
 
-						if (NetworkCommands.ContainsKey(command))
+						// The command is the first word. Split() would allocate an
+						// array plus a string per argument just to read it; a
+						// command with no arguments now costs nothing at all.
+						int space = cmd.CommandString.IndexOf(' ');
+						string command = (space < 0) ? cmd.CommandString : cmd.CommandString.Substring(0, space);
+
+						Action<ulong, string, byte[], DateTime> callback;
+						if (NetworkCommands.TryGetValue(command, out callback))
 						{
-							NetworkCommands[command]?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data, new DateTime(cmd.Timestamp));
+							callback?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data, sent);
 						}
 					}
 				}
@@ -169,8 +224,6 @@ namespace SENetworkAPI
 				throw new Exception($"[NetworkAPI] Cannot register a command using null. null is reserved for chat messages.");
 			}
 
-			command = command.ToLower();
-
 			if (NetworkCommands.ContainsKey(command))
 			{
 				throw new Exception($"[NetworkAPI] Failed to add the network command callback '{command}'. A command with the same name was already added.");
@@ -185,7 +238,7 @@ namespace SENetworkAPI
 		/// <param name="command"></param>
 		public void UnregisterNetworkCommand(string command)
 		{
-			if (NetworkCommands.ContainsKey(command))
+			if (command != null)
 			{
 				NetworkCommands.Remove(command);
 			}
@@ -203,8 +256,6 @@ namespace SENetworkAPI
 				command = string.Empty;
 			}
 
-			command = command.ToLower();
-
 			if (ChatCommands.ContainsKey(command))
 			{
 				throw new Exception($"[NetworkAPI] Failed to add the network command callback '{command}'. A command with the same name was already added.");
@@ -219,10 +270,7 @@ namespace SENetworkAPI
 		/// <param name="command">the chat command to unregister</param>
 		public void UnregisterChatCommand(string command)
 		{
-			if (ChatCommands.ContainsKey(command))
-			{
-				ChatCommands.Remove(command);
-			}
+			ChatCommands.Remove(command ?? string.Empty);
 		}
 
 		/// <summary>

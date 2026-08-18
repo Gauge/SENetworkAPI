@@ -40,18 +40,19 @@ namespace SENetworkAPI.Tests
 			Assert.Equal("give steel 100", received);
 		}
 
-		[Fact]
-		public void CommandPacket_LookupIsCaseSensitive_SoMixedCaseSendsNeverMatch()
+		[Theory]
+		[InlineData("update")]
+		[InlineData("Update")]
+		[InlineData("UPDATE")]
+		public void CommandLookupIsCaseInsensitive(string sentAs)
 		{
-			// Registration lowercases the key, but the incoming lookup does not
-			// lowercase the wire value. "Update" therefore never resolves.
 			NetworkAPI api = GivenClient();
 			bool invoked = false;
 			api.RegisterNetworkCommand("update", (s, c, d, t) => invoked = true);
 
-			Receive(EncodeCommandPacket("Update"));
+			Receive(EncodeCommandPacket(sentAs));
 
-			Assert.False(invoked);
+			Assert.True(invoked);
 		}
 
 		[Fact]

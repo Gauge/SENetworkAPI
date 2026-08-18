@@ -37,14 +37,15 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
-		public void RegisterNetworkCommand_StoresTheCommandLowercased()
+		public void RegisterNetworkCommand_KeepsTheCallersSpellingAndMatchesAnyCasing()
 		{
 			NetworkAPI api = GivenServer();
 
 			api.RegisterNetworkCommand("MixedCase", (a, b, c, d) => { });
 
+			Assert.True(api.NetworkCommands.ContainsKey("MixedCase"));
 			Assert.True(api.NetworkCommands.ContainsKey("mixedcase"));
-			Assert.False(api.NetworkCommands.ContainsKey("MixedCase"));
+			Assert.True(api.NetworkCommands.ContainsKey("MIXEDCASE"));
 		}
 
 		[Fact]
@@ -61,15 +62,37 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
-		public void UnregisterNetworkCommand_DoesNotLowercase_SoMixedCaseUnregisterIsANoOp()
+		public void UnregisterNetworkCommand_MatchesAnyCasing()
 		{
-			// Documents an asymmetry: Register lowercases, Unregister does not.
 			NetworkAPI api = GivenServer();
 			api.RegisterNetworkCommand("Update", (a, b, c, d) => { });
 
-			api.UnregisterNetworkCommand("Update");
+			api.UnregisterNetworkCommand("UPDATE");
 
-			Assert.True(api.NetworkCommands.ContainsKey("update"));
+			Assert.Empty(api.NetworkCommands);
+		}
+
+		[Fact]
+		public void UnregisterNetworkCommand_WithNull_IsSafe()
+		{
+			NetworkAPI api = GivenServer();
+			api.RegisterNetworkCommand("update", (a, b, c, d) => { });
+
+			Exception thrown = Record.Exception(() => api.UnregisterNetworkCommand(null));
+
+			Assert.Null(thrown);
+			Assert.Single(api.NetworkCommands);
+		}
+
+		[Fact]
+		public void UnregisterChatCommand_WithNull_RemovesTheEmptyCommand()
+		{
+			NetworkAPI api = GivenServer("/test");
+			api.RegisterChatCommand(null, _ => { });
+
+			api.UnregisterChatCommand(null);
+
+			Assert.Empty(api.ChatCommands);
 		}
 
 		[Fact]

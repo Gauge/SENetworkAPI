@@ -186,6 +186,20 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
+		public void KeywordMatchingIsOrdinalSoItDoesNotDependOnTheClientLocale()
+		{
+			// The old implementation lower-cased with the current culture, which
+			// mangles "I" in Turkish locales. Ordinal comparison does not.
+			NetworkAPI api = GivenServer("/HI");
+			string received = null;
+			api.RegisterChatCommand("there", args => received = args);
+
+			Game.Utilities.SimulateChat("/HI there you");
+
+			Assert.Equal("you", received);
+		}
+
+		[Fact]
 		public void UnregisterChatCommand_StopsDispatch()
 		{
 			NetworkAPI api = GivenServer(Keyword);
