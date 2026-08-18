@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Compiles the shipped mod sources against the REAL Space Engineers assemblies.
+
+    Nothing here runs; the point is the compiler. It proves the sources still
+    build against the current game (and surfaces obsolete-API warnings), which
+    is the one thing the stub harness cannot tell you.
+
+        dotnet build tests/GameContractCheck
+        dotnet build tests/GameContractCheck -p:GameBin=/path/to/SpaceEngineers/Bin64
+
+    Requires an installed copy of the game. Not part of `dotnet test`.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AssemblyName>SENetworkAPI.GameContractCheck</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <!-- The obsolete-API warnings are the interesting output; keep them visible. -->
+    <NoWarn />
+  </PropertyGroup>
+
+  <!-- Where the game lives: -p:GameBin=..., then $SE_BIN64, then the usual spots. -->
+  <PropertyGroup>
+    <GameBin Condition="'$(GameBin)' == ''">$(SE_BIN64)</GameBin>
+    <GameBin Condition="'$(GameBin)' == '' AND Exists('$(HOME)/Steam/SteamLibrary/steamapps/common/SpaceEngineers/Bin64')">$(HOME)/Steam/SteamLibrary/steamapps/common/SpaceEngineers/Bin64</GameBin>
+    <GameBin Condition="'$(GameBin)' == '' AND Exists('$(HOME)/.steam/steam/steamapps/common/SpaceEngineers/Bin64')">$(HOME)/.steam/steam/steamapps/common/SpaceEngineers/Bin64</GameBin>
+    <GameBin Condition="'$(GameBin)' == '' AND Exists('C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers\Bin64')">C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers\Bin64</GameBin>
+  </PropertyGroup>
+
+  <Target Name="RequireGameBin" BeforeTargets="BeforeBuild" Condition="!Exists('$(GameBin)')">
+    <Error Text="Space Engineers not found. Pass -p:GameBin=&lt;path to Bin64&gt; or set the SE_BIN64 environment variable. Looked in: '$(GameBin)'." />
+  </Target>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../../*.cs" LinkBase="Production" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Sandbox.Common"><HintPath>$(GameBin)/Sandbox.Common.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Sandbox.Game"><HintPath>$(GameBin)/Sandbox.Game.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Sandbox.Graphics"><HintPath>$(GameBin)/Sandbox.Graphics.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="SpaceEngineers.ObjectBuilders"><HintPath>$(GameBin)/SpaceEngineers.ObjectBuilders.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="VRage"><HintPath>$(GameBin)/VRage.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="VRage.Game"><HintPath>$(GameBin)/VRage.Game.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="VRage.Library"><HintPath>$(GameBin)/VRage.Library.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="VRage.Math"><HintPath>$(GameBin)/VRage.Math.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="ProtoBuf.Net.Core"><HintPath>$(GameBin)/ProtoBuf.Net.Core.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+</Project>
