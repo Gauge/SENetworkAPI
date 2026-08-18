@@ -1,6 +1,11 @@
 .vs/
 obj/
+bin/
 Properties/
 *.csproj
 *.sln
 *.ini
+
+# The test tree needs its project files tracked; the mod itself is compiled
+# by Space Engineers and has no project file of its own.
+!tests/**/*.csproj
