@@ -52,17 +52,12 @@ namespace SEStubs
 		public Vector3D GetPosition() => Position;
 	}
 
-	public sealed class FakeSessionSettings : IMySessionSettings
-	{
-		public int SyncDistance { get; set; } = 3000;
-	}
-
 	public sealed class FakeSession : IMySession
 	{
 		/// <summary>Null on a dedicated server -- there is no local player.</summary>
 		public IMyPlayer Player { get; set; }
 		public IMyPlayer LocalHumanPlayer { get; set; }
-		public IMySessionSettings SessionSettings { get; set; } = new FakeSessionSettings();
+		public MyObjectBuilder_SessionSettings SessionSettings { get; set; } = new MyObjectBuilder_SessionSettings();
 		public MyOnlineModeEnum OnlineMode { get; set; } = MyOnlineModeEnum.PUBLIC;
 	}
 
@@ -105,17 +100,45 @@ namespace SEStubs
 		public int MessageEnteredSubscriberCount => MessageEntered?.GetInvocationList().Length ?? 0;
 	}
 
+	/// <summary>
+	/// Reproduces the parts of MyMultiplayerBase's ModAPI implementation that a
+	/// mod can observe, including the two rules that bite in production:
+	///
+	///   * an unreliable message longer than 1024 bytes is dropped and the call
+	///     returns false (the engine does this before touching the network);
+	///   * a message addressed to the local player is delivered straight back
+	///     into the local handlers (HandleMessageClient: recipient == Sync.MyId).
+	/// </summary>
 	public sealed class FakeMultiplayer : IMyMultiplayer
 	{
+		/// <summary>The engine's cut-off for unreliable messages.</summary>
+		public const int UnreliableSizeLimit = 1024;
+
+		private const int MaxLoopbackDepth = 8;
+
 		public bool IsServer { get; set; }
 
+		/// <summary>Packets accepted by the transport, oldest first.</summary>
 		public readonly List<SentPacket> Sent = new List<SentPacket>();
 
-		private readonly Dictionary<ushort, List<Action<byte[]>>> _handlers = new Dictionary<ushort, List<Action<byte[]>>>();
+		/// <summary>Packets the transport refused (unreliable and over the size limit).</summary>
+		public readonly List<SentPacket> Dropped = new List<SentPacket>();
 
 		/// <summary>
-		/// When set, every outgoing packet is also handed to this callback --
-		/// used to build loopback ("what the receiver sees") tests.
+		/// Steam id of the local player, used to decide whether a directed send
+		/// loops straight back. 0 for a dedicated server, which is also the
+		/// engine's server id.
+		/// </summary>
+		public ulong LocalSteamId;
+
+		/// <summary>Set false to stop modelling the engine's self-delivery.</summary>
+		public bool DeliverToSelf = true;
+
+		private readonly Dictionary<ushort, List<Action<byte[]>>> _handlers = new Dictionary<ushort, List<Action<byte[]>>>();
+		private int _loopbackDepth;
+
+		/// <summary>
+		/// When set, every accepted packet is also handed to this callback.
 		/// </summary>
 		public Action<SentPacket> OnPacketSent;
 
@@ -137,6 +160,11 @@ namespace SEStubs
 			}
 		}
 
+		// SENetworkAPI does not use the secure pair; they exist so the stub
+		// mirrors the real interface.
+		public void RegisterSecureMessageHandler(ushort id, Action<ushort, byte[], ulong, bool> messageHandler) { }
+		public void UnregisterSecureMessageHandler(ushort id, Action<ushort, byte[], ulong, bool> messageHandler) { }
+
 		public int HandlerCount(ushort id) => _handlers.ContainsKey(id) ? _handlers[id].Count : 0;
 
 		/// <summary>Pushes a packet into the registered handlers, as the game does on receive.</summary>
@@ -147,25 +175,60 @@ namespace SEStubs
 				return;
 			}
 
-			foreach (Action<byte[]> handler in _handlers[id].ToArray())
+			if (++_loopbackDepth > MaxLoopbackDepth)
 			{
-				handler(message);
+				_loopbackDepth = 0;
+				throw new InvalidOperationException(
+					$"Loopback depth exceeded {MaxLoopbackDepth}: the code under test keeps echoing packets to itself.");
+			}
+
+			try
+			{
+				foreach (Action<byte[]> handler in _handlers[id].ToArray())
+				{
+					handler(message);
+				}
+			}
+			finally
+			{
+				_loopbackDepth--;
 			}
 		}
 
-		public void SendMessageToServer(ushort id, byte[] message, bool reliable = true)
-			=> Record(new SentPacket { ComId = id, Data = message, Target = PacketTarget.Server, Reliable = reliable });
-
-		public void SendMessageToOthers(ushort id, byte[] message, bool reliable = true)
-			=> Record(new SentPacket { ComId = id, Data = message, Target = PacketTarget.Others, Reliable = reliable });
-
-		public void SendMessageTo(ushort id, byte[] message, ulong recipient, bool reliable = true)
-			=> Record(new SentPacket { ComId = id, Data = message, Target = PacketTarget.Direct, Recipient = recipient, Reliable = reliable });
-
-		private void Record(SentPacket packet)
+		public bool SendMessageToServer(ushort id, byte[] message, bool reliable = true)
 		{
+			// A listen server host is its own server, so this comes straight back.
+			return Record(new SentPacket { ComId = id, Data = message, Target = PacketTarget.Server, Reliable = reliable }, IsServer);
+		}
+
+		public bool SendMessageToOthers(ushort id, byte[] message, bool reliable = true)
+		{
+			return Record(new SentPacket { ComId = id, Data = message, Target = PacketTarget.Others, Reliable = reliable }, false);
+		}
+
+		public bool SendMessageTo(ushort id, byte[] message, ulong recipient, bool reliable = true)
+		{
+			SentPacket packet = new SentPacket { ComId = id, Data = message, Target = PacketTarget.Direct, Recipient = recipient, Reliable = reliable };
+			return Record(packet, recipient == LocalSteamId);
+		}
+
+		private bool Record(SentPacket packet, bool addressedToSelf)
+		{
+			if (!packet.Reliable && packet.Data.Length > UnreliableSizeLimit)
+			{
+				Dropped.Add(packet);
+				return false;
+			}
+
 			Sent.Add(packet);
 			OnPacketSent?.Invoke(packet);
+
+			if (addressedToSelf && DeliverToSelf)
+			{
+				Deliver(packet.ComId, packet.Data);
+			}
+
+			return true;
 		}
 	}
 
@@ -251,6 +314,7 @@ namespace SEStubs
 			FakePlayer host = game.Players.Add(hostSteamId);
 			game.Session.Player = host;
 			game.Session.LocalHumanPlayer = host;
+			game.Multiplayer.LocalSteamId = hostSteamId;
 			return game;
 		}
 
@@ -274,6 +338,7 @@ namespace SEStubs
 			FakePlayer me = game.Players.Add(steamId);
 			game.Session.Player = me;
 			game.Session.LocalHumanPlayer = me;
+			game.Multiplayer.LocalSteamId = steamId;
 			return game;
 		}
 
@@ -298,6 +363,7 @@ namespace SEStubs
 		public void ClearTraffic()
 		{
 			Multiplayer.Sent.Clear();
+			Multiplayer.Dropped.Clear();
 			Utilities.ShownMessages.Clear();
 			MyLog.Default.Clear();
 		}

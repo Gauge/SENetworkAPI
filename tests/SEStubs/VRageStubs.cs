@@ -81,7 +81,7 @@ namespace VRage.Utils
 	/// </summary>
 	public class MyLog
 	{
-		public static MyLog Default = new MyLog();
+		public static MyLog Default { get; set; } = new MyLog();
 
 		public readonly List<LogEntry> Entries = new List<LogEntry>();
 
@@ -188,6 +188,10 @@ namespace VRage.Game
 	}
 
 	public class MyObjectBuilder_EntityBase : MyObjectBuilder_Base { }
+	public class MyObjectBuilder_SessionSettings : MyObjectBuilder_Base
+	{
+		public int SyncDistance = 3000;
+	}
 	public class MyObjectBuilder_SessionComponent : MyObjectBuilder_Base { }
 }
 
@@ -216,14 +220,6 @@ namespace VRage.Game.Entity
 	using VRage.ModAPI;
 	using VRageMath;
 
-	/// <summary>Position/orientation component of an entity.</summary>
-	public class MyPositionComponentBase
-	{
-		public Vector3D Position;
-		public Vector3D GetPosition() => Position;
-		public void SetPosition(Vector3D position) => Position = position;
-	}
-
 	/// <summary>
 	/// Concrete entity stub. <see cref="Close"/> and <see cref="AddToScene"/>
 	/// raise the lifecycle events NetSync hooks into.
@@ -234,7 +230,7 @@ namespace VRage.Game.Entity
 
 		public long EntityId { get; set; }
 		public MyDefinitionId? DefinitionId { get; set; }
-		public MyPositionComponentBase PositionComp { get; set; } = new MyPositionComponentBase();
+		public VRage.Game.Components.MyPositionComponentBase PositionComp { get; set; } = new VRage.Game.Components.MyPositionComponentBase();
 
 		public event Action<MyEntity> OnClose;
 		public event Action<MyEntity> AddedToScene;
@@ -307,6 +303,14 @@ namespace VRage.Game.Components
 	}
 
 	public abstract class MyComponentBase { }
+
+	/// <summary>Position/orientation component of an entity.</summary>
+	public class MyPositionComponentBase
+	{
+		public VRageMath.Vector3D Position;
+		public VRageMath.Vector3D GetPosition() => Position;
+		public void SetPosition(VRageMath.Vector3D position) => Position = position;
+	}
 
 	public abstract class MySessionComponentBase : MyComponentBase
 	{

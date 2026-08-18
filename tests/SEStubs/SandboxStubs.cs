@@ -1,16 +1,17 @@
 // ---------------------------------------------------------------------------
-//  Sandbox.ModAPI stand-ins -- the static gateway SENetworkAPI talks to.
+//  The ModAPI service interfaces and the static gateway that hands them out.
+//
+//  Namespaces match the shipped game exactly: only MyAPIGateway itself lives in
+//  Sandbox.ModAPI (Sandbox.Common.dll); every interface it exposes is declared
+//  in VRage.Game.dll under VRage.Game.ModAPI or VRage.ModAPI.
 // ---------------------------------------------------------------------------
 
 using System;
 using System.Collections.Generic;
-using System.IO;
-using ProtoBuf;
 using VRage.Game;
-using VRage.Game.ModAPI;
 using VRage.ModAPI;
 
-namespace Sandbox.ModAPI
+namespace VRage.Game.ModAPI
 {
 	public delegate void MessageEnteredDel(string messageText, ref bool sendToOthers);
 
@@ -26,23 +27,27 @@ namespace Sandbox.ModAPI
 	public interface IMyMultiplayer
 	{
 		bool IsServer { get; }
+
+		// Note: the non-secure pair is [Obsolete] in the shipped game, which is
+		// what SENetworkAPI still uses. See docs/known-issues.md.
 		void RegisterMessageHandler(ushort id, Action<byte[]> messageHandler);
 		void UnregisterMessageHandler(ushort id, Action<byte[]> messageHandler);
-		void SendMessageToServer(ushort id, byte[] message, bool reliable = true);
-		void SendMessageToOthers(ushort id, byte[] message, bool reliable = true);
-		void SendMessageTo(ushort id, byte[] message, ulong recipient, bool reliable = true);
-	}
 
-	public interface IMySessionSettings
-	{
-		int SyncDistance { get; }
+		// The secure pair, for reference: the engine supplies a verified sender
+		// id and a "came from the server" flag that no packet can forge.
+		void RegisterSecureMessageHandler(ushort id, Action<ushort, byte[], ulong, bool> messageHandler);
+		void UnregisterSecureMessageHandler(ushort id, Action<ushort, byte[], ulong, bool> messageHandler);
+
+		bool SendMessageToServer(ushort id, byte[] message, bool reliable = true);
+		bool SendMessageToOthers(ushort id, byte[] message, bool reliable = true);
+		bool SendMessageTo(ushort id, byte[] message, ulong recipient, bool reliable = true);
 	}
 
 	public interface IMySession
 	{
 		IMyPlayer Player { get; }
 		IMyPlayer LocalHumanPlayer { get; }
-		IMySessionSettings SessionSettings { get; }
+		MyObjectBuilder_SessionSettings SessionSettings { get; }
 		MyOnlineModeEnum OnlineMode { get; }
 	}
 
@@ -50,11 +55,19 @@ namespace Sandbox.ModAPI
 	{
 		void GetPlayers(List<IMyPlayer> players, Func<IMyPlayer, bool> collect = null);
 	}
+}
 
+namespace VRage.ModAPI
+{
 	public interface IMyEntities
 	{
 		IMyEntity GetEntityById(long entityId);
 	}
+}
+
+namespace Sandbox.ModAPI
+{
+	using VRage.Game.ModAPI;
 
 	/// <summary>
 	/// The game's static service locator. In the real game these are populated
