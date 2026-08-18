@@ -6,6 +6,10 @@ Space Engineers gives a mod:
 * `MyAPIGateway.Multiplayer.RegisterMessageHandler(ushort, Action<byte[]>)`
 * `MyAPIGateway.Multiplayer.SendMessageTo*(ushort, byte[], ...)`
 
+(The registration call is the *non-secure* one, which the current game marks
+obsolete and which carries no verified sender — that choice shapes the trust
+model; see [known-issues.md](known-issues.md#security).)
+
 Everything else — command dispatch, chat commands, per-variable syncing — is
 built on top of a single packet type travelling on a single channel.
 

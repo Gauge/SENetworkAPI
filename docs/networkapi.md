@@ -17,7 +17,9 @@ if (!NetworkAPI.IsInitialized)
 
 `Init` is a no-op once `Instance` is set, so every class in your mod can call it
 defensively. Because `Init` reads `MyAPIGateway.Multiplayer.IsServer`, call it
-no earlier than your session component's `Init` / your block's `Init`.
+no earlier than your session component's `Init` / your block's `Init` — and call
+it **on the game update thread**: it registers a message handler, and the engine
+throws `InvalidOperationException` if that happens from another thread.
 
 Useful members:
 
@@ -49,6 +51,8 @@ private void OnUpdate(ulong steamId, string commandString, byte[] data, DateTime
 ```
 
 * `steamId` — who sent it (see the [`SteamId` asymmetry](protocol.md#the-steamid-asymmetry)).
+  It is **not verified by the engine** — the sender wrote it. Do not use it for
+  permission checks; see [known-issues.md](known-issues.md#sender-identity-is-not-authenticated-engine-verified).
 * `commandString` — the **whole** string as sent, arguments included. Dispatch
   matches only the first space-delimited word.
 * `data` — the payload, already decompressed.
@@ -123,6 +127,10 @@ void Say(string message);   // SendCommand(null, message)
 Note the parameter order: `data` comes before `sent` and `steamId`, so pass them
 by name.
 
+Leave `isReliable` alone unless the packet is tiny: the engine silently drops
+any unreliable message whose compressed size exceeds 1024 bytes, and the failure
+is invisible to the caller.
+
 ### As a client
 
 Everything goes to the server; there is no client-to-client path.
@@ -155,7 +163,10 @@ s.SendCommand("boom", position);                    // everyone within sync dist
   `Command.SteamId` is excluded (that is how an update avoids echoing to its
   originator); and passing an explicit `steamId` ignores distance entirely.
 * On a listen server the host's own player is in `MyAPIGateway.Players`, so a
-  positional send addresses a packet to the host as well.
+  positional send addresses a packet to the host as well — and the engine
+  delivers it, so the host runs its own receive path. With a `message` attached
+  that amplifies into three chat lines and an extra broadcast; see
+  [known-issues.md](known-issues.md#a-positional-send-with-a-message-is-amplified-engine-verified).
 
 ## Receiving
 

@@ -81,6 +81,32 @@ int   frames = NetworkAPI.GetDeltaFrames(timestamp.Ticks);   // ceil(ms / (1000/
 `GetDeltaMilliseconds` divides ticks as integers, so the result is always a
 whole number of milliseconds despite the `float` return type.
 
+## Reliability
+
+`isReliable` (default `true`) is passed straight to the engine, which applies a
+hard rule before anything touches the network:
+
+```csharp
+if (!reliable && message.Length > 1024) return false;
+```
+
+The packet is dropped, and SENetworkAPI discards that `false`. Because
+compression runs first, the limit applies to the *compressed* packet — a highly
+compressible payload can slip under it, an incompressible 2KB one cannot. Treat
+`isReliable: false` as "tiny packets only". See
+[known-issues.md](known-issues.md#unreliable-messages-over-1024-bytes-are-silently-discarded-engine-verified).
+
+A packet addressed to the local player is delivered straight back into the local
+handlers (`HandleMessageClient`: `if (recipient == Sync.MyId)`), so a listen
+server that addresses itself runs its own receive path.
+
+## Trust
+
+None of this is authenticated. SENetworkAPI uses the game's non-secure message
+handler, which hands the mod raw bytes and nothing else, so `Command.SteamId` is
+whatever the sender chose to write. Never make a permission decision from it —
+see [known-issues.md](known-issues.md#sender-identity-is-not-authenticated-engine-verified).
+
 ## Channel
 
 All of the above rides on the single `ushort comId` passed to
