@@ -4,7 +4,7 @@
 dotnet test tests/SENetworkAPI.Tests
 ```
 
-301 tests, no game install required, about a second to run.
+323 tests, no game install required, about a second to run.
 
 If you have the game installed, there is a second check that needs no test
 runner — it compiles the shipped sources against the real assemblies:
@@ -149,6 +149,7 @@ and deliver those bytes — see `IntegrationTests`.
 | `TimingTests` | `GetDeltaMilliseconds` / `GetDeltaFrames` |
 | `SenderIdentityTests` | the trust model: unverified sender ids, arrival-side checks |
 | `IntegrationTests` | full client↔server exchanges |
+| `UseCaseTests` | the patterns the mods next door actually use |
 
 ## Are the tests any good?
 
@@ -167,6 +168,32 @@ so tests can assert that work was *skipped*, not merely that the result matched.
 
 If you add behaviour here, do the same to whatever you write to cover it: break
 the code on purpose and make sure the test notices.
+
+## Use case tests
+
+`UseCaseTests` is modelled on the mods sitting beside this repo — BlinkDrive,
+GrappleHook, GridGarage, KingOfTheHill and the Zeppelin controller — rather
+than on the API's methods. Each test mirrors a real pattern:
+
+| Pattern | Where it comes from |
+| --- | --- |
+| Server-authoritative settings fetched on join | BlinkDrive `Core.cs`, GridGarage `Core.cs` |
+| Settings on a block, ignoring sync distance | GrappleHook `WeaponControlLayer.cs` |
+| Thirty properties on one block | KingOfTheHill `ZoneBlock.cs` |
+| A flag set to fire, cleared locally with `SyncType.None` | BlinkDrive `BlinkNextFrame` |
+| A flag toggled to signal | GrappleHook `ResetIndicator` |
+| A request object assigned to make a call | GrappleHook `RequestZiplineActivation` |
+| A `List<string>` edited in place then `Push()`ed | GridGarage `GridNames` |
+| Client asks, server answers that client only | GridGarage `Command_Settings` |
+| The same chat word wired differently per side | KingOfTheHill `Core.cs` |
+| A command carrying only chat text | KingOfTheHill `blank_message` |
+
+These are the tests to run first after touching anything: they fail in terms of
+"this mod stops working" rather than "this method returns the wrong value". The
+suite catches change detection being removed, reference types being wrongly
+deduplicated, either half of fetch batching being undone, the transfer
+direction check being skipped, the sync distance flag being ignored, and
+declaration-order addressing being broken — each on its own.
 
 ## Not covered
 
