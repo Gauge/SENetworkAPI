@@ -62,18 +62,105 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
-		public void ValueChanged_FiresEvenWhenTheValueIsUnchanged()
+		public void AssigningTheSameValueDoesNothing()
 		{
-			// NetSync does not compare old and new; every assignment is a change.
 			GivenClient();
 			NetSync<int> property = Property(start: 5);
 			int calls = 0;
 			property.ValueChanged += (o, n) => calls++;
+			Game.ClearTraffic();
+
+			property.Value = 5;
+			property.Value = 5;
+
+			Assert.Equal(0, calls);
+			Assert.Empty(Game.Sent);
+		}
+
+		[Fact]
+		public void AlwaysSend_RestoresTheOriginalEveryAssignmentBehaviour()
+		{
+			GivenClient();
+			NetSync<int> property = Property(start: 5).AlwaysSend();
+			int calls = 0;
+			property.ValueChanged += (o, n) => calls++;
+			Game.ClearTraffic();
 
 			property.Value = 5;
 			property.Value = 5;
 
 			Assert.Equal(2, calls);
+			Assert.Equal(2, Game.Sent.Count);
+		}
+
+		[Fact]
+		public void AChangedValueStillSends()
+		{
+			GivenClient();
+			NetSync<int> property = Property(start: 5);
+			Game.ClearTraffic();
+
+			property.Value = 6;
+
+			Assert.Single(Game.Sent);
+		}
+
+		[Fact]
+		public void PushSendsEvenWhenNothingChanged()
+		{
+			GivenClient();
+			NetSync<int> property = Property(start: 5);
+			property.Value = 5;
+			Game.ClearTraffic();
+
+			property.Push();
+
+			Assert.Single(Game.Sent);
+		}
+
+		[Fact]
+		public void ReferenceTypesAreAlwaysSent_BecauseTheirContentsCanChangeBehindTheReference()
+		{
+			// The same List instance can hold different items from one
+			// assignment to the next, so identity must not be read as "no
+			// change". Only types that compare by value are deduplicated.
+			GivenClient();
+			List<int> shared = new List<int> { 1 };
+			NetSync<List<int>> property = new NetSync<List<int>>(new TestSessionComponent(), TransferType.Both, shared, syncOnLoad: false);
+			Game.ClearTraffic();
+
+			shared.Add(2);
+			property.Value = shared;
+
+			Assert.Single(Game.Sent);
+		}
+
+		[Fact]
+		public void StringsAreDeduplicated()
+		{
+			GivenClient();
+			NetSync<string> property = new NetSync<string>(new TestSessionComponent(), TransferType.Both, "hello", syncOnLoad: false);
+			Game.ClearTraffic();
+
+			property.Value = "hel" + "lo";
+
+			Assert.Empty(Game.Sent);
+		}
+
+		[Fact]
+		public void AnIncomingUpdateIsNotDeduplicated()
+		{
+			// Deduplication is a send-side decision. A mod waiting on
+			// ValueChangedByNetwork to know the server answered must still hear
+			// about it even when the answer matches what it already had.
+			GivenClient();
+			NetSync<int> property = Property(start: 42);
+			bool heard = false;
+			property.ValueChangedByNetwork += (o, n, s) => heard = true;
+
+			Receive(EncodePropertyPacket(property.Id, 0, SyncType.Post, 42, from: HostId));
+
+			Assert.True(heard);
 		}
 
 		[Fact]
@@ -231,6 +318,57 @@ namespace SENetworkAPI.Tests
 			property.Value = "hello";
 
 			Assert.Equal("hello", property.Value);
+		}
+
+		[Fact]
+		public void Lossy_SendsUpdatesOnTheUnreliableChannel()
+		{
+			GivenClient();
+			NetSync<int> property = Property().Lossy();
+			Game.ClearTraffic();
+
+			property.Value = 42;
+
+			Assert.False(Assert.Single(Game.Sent).Reliable);
+		}
+
+		[Fact]
+		public void Lossy_KeepsFetchesReliable()
+		{
+			// Losing a fetch means the value never arrives at all.
+			GivenClient();
+			NetSync<int> property = Property().Lossy();
+			Game.ClearTraffic();
+
+			property.Fetch();
+
+			Assert.True(Assert.Single(Game.Sent).Reliable);
+		}
+
+		[Fact]
+		public void Lossy_FallsBackToReliableForUpdatesTooBigForTheUnreliableChannel()
+		{
+			GivenClient();
+			byte[] bulk = new byte[8192];
+			new Random(3).NextBytes(bulk);
+			NetSync<byte[]> property = new NetSync<byte[]>(new TestSessionComponent(), TransferType.Both, new byte[] { 1 }, syncOnLoad: false).Lossy();
+			Game.ClearTraffic();
+
+			property.Value = bulk;
+
+			Assert.True(Assert.Single(Game.Sent).Reliable);
+		}
+
+		[Fact]
+		public void PropertiesAreReliableByDefault()
+		{
+			GivenClient();
+			NetSync<int> property = Property();
+			Game.ClearTraffic();
+
+			property.Value = 42;
+
+			Assert.True(Assert.Single(Game.Sent).Reliable);
 		}
 
 		// -------------------------------------------------------------------

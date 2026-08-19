@@ -63,6 +63,14 @@ namespace SENetworkAPI
 
 			byte[] packet = MyAPIGateway.Utilities.SerializeToBinary(cmd);
 
+			// The engine silently drops unreliable messages over its size limit
+			// and reports the failure through a return value nobody reads. Send
+			// those reliably instead of losing them.
+			if (!isReliable && packet.Length > UnreliableMessageLimit)
+			{
+				isReliable = true;
+			}
+
 			if (LogNetworkTraffic)
 			{
 				MyLog.Default.Info($"[NetworkAPI] TRANSMITTING Bytes: {packet.Length}  Command: {cmd.CommandString}  User: {steamId}");

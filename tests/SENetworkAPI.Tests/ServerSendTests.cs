@@ -308,11 +308,11 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
-		public void UnreliableMessagesOverTheEngineLimitAreSilentlyDropped()
+		public void AnUnreliableSendTooBigForTheEngineIsUpgradedToReliable()
 		{
-			// MyMultiplayerBase refuses any unreliable message longer than 1024
-			// bytes and returns false. SENetworkAPI discards that return value,
-			// so the data disappears without a trace.
+			// MyMultiplayerBase refuses any unreliable message over 1024 bytes
+			// and reports it through a return value nobody reads, so the data
+			// used to vanish. It is sent reliably instead.
 			Server server = GivenServer();
 			Game.ClearTraffic();
 			byte[] incompressible = new byte[4096];
@@ -320,10 +320,9 @@ namespace SENetworkAPI.Tests
 
 			server.SendCommand("bulk", data: incompressible, isReliable: false);
 
-			Assert.Empty(Game.Sent);
-			Assert.Single(Game.Multiplayer.Dropped);
-			Assert.False(LoggedError("dropped"));
-			Assert.False(LoggedWarning("dropped"));
+			SentPacket packet = Assert.Single(Game.Sent);
+			Assert.True(packet.Reliable);
+			Assert.Empty(Game.Multiplayer.Dropped);
 		}
 
 		[Fact]

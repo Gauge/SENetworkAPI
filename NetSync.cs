@@ -192,6 +192,35 @@ namespace SENetworkAPI
 		private T _value;
 		private MyEntity Entity;
 		private string sessionName;
+		private bool alwaysSend;
+		private bool lossy;
+
+		/// <summary>
+		/// Whether comparing two values of T is both cheap and meaningful.
+		///
+		/// Reference types are excluded on purpose: the same instance can have
+		/// different contents from one assignment to the next, so "same
+		/// reference" must never be read as "nothing changed". Structs are only
+		/// included when they compare without boxing.
+		/// </summary>
+		private static readonly bool ComparisonIsMeaningful = IsComparisonMeaningful();
+
+		private static bool IsComparisonMeaningful()
+		{
+			if (typeof(T) == typeof(string))
+			{
+				return true;
+			}
+
+			object probe = default(T);
+
+			if (probe == null)
+			{
+				return false;
+			}
+
+			return probe is IEquatable<T> || probe is IComparable;
+		}
 
 		/// <param name="entity">IMyEntity object this property is attached to</param>
 		/// <param name="transferType"></param>
@@ -342,11 +371,49 @@ namespace SENetworkAPI
 		}
 
 		/// <summary>
+		/// Restores the original behaviour of sending on every assignment, even
+		/// when the value is identical to the one already held.
+		///
+		/// By default an assignment that does not change the value is dropped:
+		/// nothing is sent and ValueChanged does not fire. Use this if your mod
+		/// treats an assignment as an event rather than a state change - a
+		/// heartbeat, say. <see cref="Push()"/> always sends regardless.
+		/// </summary>
+		public NetSync<T> AlwaysSend(bool enabled = true)
+		{
+			alwaysSend = enabled;
+			return this;
+		}
+
+		/// <summary>
+		/// Sends this property's updates on the unreliable channel when they fit
+		/// (the engine drops unreliable messages over
+		/// <see cref="NetworkAPI.UnreliableMessageLimit"/> bytes, so anything
+		/// larger is sent reliably anyway).
+		///
+		/// Worth it for values that are overwritten constantly, where a dropped
+		/// update is replaced by the next one before anybody notices. Fetches
+		/// are always reliable - losing one means never syncing at all.
+		/// </summary>
+		public NetSync<T> Lossy(bool enabled = true)
+		{
+			lossy = enabled;
+			return this;
+		}
+
+		/// <summary>
 		/// Allows you to change how syncing works when setting the value this way
 		/// </summary>
 		public void SetValue(T val, SyncType syncType = SyncType.None)
 		{
 			T oldval = _value;
+
+			// An assignment that changes nothing is not worth a packet.
+			if (!alwaysSend && ComparisonIsMeaningful && EqualityComparer<T>.Default.Equals(oldval, val))
+			{
+				return;
+			}
+
 			_value = val;
 
 			SendValue(syncType);
@@ -501,13 +568,17 @@ namespace SENetworkAPI
 					MyLog.Default.Info($"[NetworkAPI] _TRANSMITTING_ {Descriptor()} - Id:{data.Id}, EId:{data.EntityId}, {data.SyncType}, {((data.SyncType == SyncType.Fetch) ? "" : $"Val:{_value}")}");
 				}
 
+				// A lost fetch means the value never arrives at all, so requests
+				// stay reliable however the property is configured.
+				bool isReliable = !lossy || syncType == SyncType.Fetch;
+
 				if (LimitToSyncDistance && Entity != null)
 				{
-					NetworkAPI.Instance.SendCommand(new Command() { IsProperty = true, Property = data, SteamId = id }, Entity.PositionComp.GetPosition(), steamId: sendTo);
+					NetworkAPI.Instance.SendCommand(new Command() { IsProperty = true, Property = data, SteamId = id }, Entity.PositionComp.GetPosition(), steamId: sendTo, isReliable: isReliable);
 				}
 				else
 				{
-					NetworkAPI.Instance.SendCommand(new Command() { IsProperty = true, Property = data, SteamId = id }, steamId: sendTo);
+					NetworkAPI.Instance.SendCommand(new Command() { IsProperty = true, Property = data, SteamId = id }, steamId: sendTo, isReliable: isReliable);
 				}
 			}
 			catch (Exception e)
