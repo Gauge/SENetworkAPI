@@ -17,6 +17,7 @@ namespace SENetworkAPI.Benchmarks
 	{
 		private const int Warmup = 2000;
 		private const int Iterations = 200000;
+		private const int HeavyIterations = 300;
 		private const ushort ComId = 1234;
 		private const ulong HostId = 100;
 		private const ulong ClientId = 200;
@@ -38,6 +39,8 @@ namespace SENetworkAPI.Benchmarks
 			Measure("8 properties on a block, same frame, 64 players", BlockOfPropertiesPerFrame);
 			Measure("  ... the same, coalesced", BlockOfPropertiesCoalesced);
 			Measure("property fetch (client -> server)", PropertyFetch);
+			Measure("client streams in 200 blocks x 4 properties", ClientStreamsInAGrid);
+			Measure("server answers 200 blocks x 4 fetches", ServerAnswersAGridOfFetches);
 			Measure("server broadcast command, 32 byte payload", ServerBroadcast);
 			Measure("server receives + relays a property update", ServerReceiveAndRelay);
 			Measure("receive command packet, callback registered", ReceiveCommandPacket);
@@ -45,6 +48,7 @@ namespace SENetworkAPI.Benchmarks
 			Measure("chat line that is ours", ChatHit);
 
 			Console.WriteLine(new string('-', 78));
+			Console.WriteLine($"packets: client stream-in {Probed}, server answers {ProbedServer}");
 		}
 
 		private static bool IsDebug()
@@ -63,7 +67,7 @@ namespace SENetworkAPI.Benchmarks
 			Reset();
 			Action op = setup();
 
-			for (int i = 0; i < Warmup; i++)
+			for (int i = 0; i < Math.Min(Warmup, 20); i++)
 			{
 				op();
 			}
@@ -72,9 +76,10 @@ namespace SENetworkAPI.Benchmarks
 			GC.WaitForPendingFinalizers();
 			GC.Collect();
 
+			int iterations = name.Contains("200 blocks") ? HeavyIterations : Iterations;
 			long before = GC.GetAllocatedBytesForCurrentThread();
 			Stopwatch watch = Stopwatch.StartNew();
-			for (int i = 0; i < Iterations; i++)
+			for (int i = 0; i < iterations; i++)
 			{
 				op();
 			}
@@ -82,8 +87,8 @@ namespace SENetworkAPI.Benchmarks
 			watch.Stop();
 			long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
 
-			double bytesPerOp = (double)bytes / Iterations;
-			double nsPerOp = watch.Elapsed.TotalMilliseconds * 1000000.0 / Iterations;
+			double bytesPerOp = (double)bytes / iterations;
+			double nsPerOp = watch.Elapsed.TotalMilliseconds * 1000000.0 / iterations;
 			Console.WriteLine($"{name,-46}{bytesPerOp,12:F1}{nsPerOp,12:F1}");
 		}
 
@@ -264,11 +269,84 @@ namespace SENetworkAPI.Benchmarks
 
 		private static Action PropertyFetch()
 		{
-			Client();
+			FakeGame game = Client();
 			NetSync<Payload> property = new NetSync<Payload>(new Session(), TransferType.Both, Payload.Big(), syncOnLoad: false);
 			return () =>
 			{
 				property.Fetch();
+				game.NextFrame();
+				Drain();
+			};
+		}
+
+		/// <summary>
+		/// What joining a world looks like: a grid streams in and every synced
+		/// property on every block asks the server for its value.
+		/// </summary>
+		private static Action ClientStreamsInAGrid()
+		{
+			return () =>
+			{
+				Reset();
+				FakeGame game = Client();
+				MyEntity[] blocks = new MyEntity[200];
+
+				for (int b = 0; b < blocks.Length; b++)
+				{
+					blocks[b] = game.CreateEntity(new Vector3D(b, 0, 0));
+
+					for (int i = 0; i < 4; i++)
+					{
+						new NetSync<int>(blocks[b], TransferType.Both, i);
+					}
+				}
+
+				Drain();
+
+				for (int b = 0; b < blocks.Length; b++)
+				{
+					blocks[b].AddToScene();
+				}
+
+				game.NextFrame();
+				if (Probed == 0) { Probed = game.Sent.Count; }
+				Drain();
+			};
+		}
+
+		internal static int Probed;
+		internal static int ProbedServer;
+
+		/// <summary>The other side of the same moment: the server answering them.</summary>
+		private static Action ServerAnswersAGridOfFetches()
+		{
+			Reset();
+			FakeGame game = Server(players: 8, spread: 10);
+			List<byte[]> requests = new List<byte[]>();
+
+			for (int b = 0; b < 200; b++)
+			{
+				MyEntity block = game.CreateEntity(new Vector3D(b, 0, 0));
+
+				for (int i = 0; i < 4; i++)
+				{
+					new NetSync<int>(block, TransferType.Both, i, syncOnLoad: false);
+					SyncData sync = new SyncData { Id = i, EntityId = block.EntityId, SyncType = SyncType.Fetch };
+					Command cmd = new Command { IsProperty = true, Property = sync, SteamId = 1000, Timestamp = DateTime.UtcNow.Ticks };
+					requests.Add(StubSerializer.Serialize(cmd));
+				}
+			}
+
+			Drain();
+			return () =>
+			{
+				for (int i = 0; i < requests.Count; i++)
+				{
+					game.Multiplayer.Deliver(ComId, requests[i]);
+				}
+
+				game.NextFrame();
+				if (ProbedServer == 0) { ProbedServer = game.Sent.Count; }
 				Drain();
 			};
 		}

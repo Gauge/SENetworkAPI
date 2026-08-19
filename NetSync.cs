@@ -61,6 +61,12 @@ namespace SENetworkAPI
 				PropertyById.Clear();
 				pending.Clear();
 				due.Clear();
+				pendingFetches.Clear();
+				dueFetches.Clear();
+				pendingAnswers.Clear();
+				dueAnswers.Clear();
+				pendingAnswerTargets.Clear();
+				dueAnswerTargets.Clear();
 				flushScheduled = false;
 				generatorId = 1;
 			}
@@ -92,6 +98,8 @@ namespace SENetworkAPI
 
 		internal bool IsDirty;
 
+		internal bool IsFetchPending;
+
 		/// <summary>Requests the current value from the server. No-op on a server.</summary>
 		public abstract void Fetch();
 
@@ -105,15 +113,31 @@ namespace SENetworkAPI
 
 		internal abstract void SetNetworkValue(byte[] data, ulong sender);
 
-		internal abstract SyncData BuildUpdate();
+		internal abstract SyncData BuildUpdate(SyncType syncType);
+
+		internal abstract SyncData BuildFetch();
+
+		internal abstract void RaiseFetchRequest(ulong sender);
+
+		internal const int MaxUpdatesPerPacket = 500;
 
 		private static List<NetSync> pending = new List<NetSync>();
 		private static List<NetSync> due = new List<NetSync>();
 		private static readonly List<SyncData> batch = new List<SyncData>();
 		private static bool flushScheduled;
 
+		private static List<NetSync> pendingFetches = new List<NetSync>();
+		private static List<NetSync> dueFetches = new List<NetSync>();
+
+		private static List<NetSync> pendingAnswers = new List<NetSync>();
+		private static List<ulong> pendingAnswerTargets = new List<ulong>();
+		private static List<NetSync> dueAnswers = new List<NetSync>();
+		private static List<ulong> dueAnswerTargets = new List<ulong>();
+
 		internal static void QueueForFlush(NetSync property)
 		{
+			bool schedule;
+
 			lock (locker)
 			{
 				if (property.IsDirty)
@@ -123,16 +147,63 @@ namespace SENetworkAPI
 
 				property.IsDirty = true;
 				pending.Add(property);
+				schedule = ClaimFlush();
+			}
 
-				if (flushScheduled)
+			if (schedule)
+			{
+				MyAPIGateway.Utilities.InvokeOnGameThread(Flush, "SENetworkAPI");
+			}
+		}
+
+		internal static void QueueFetch(NetSync property)
+		{
+			bool schedule;
+
+			lock (locker)
+			{
+				if (property.IsFetchPending)
 				{
 					return;
 				}
 
-				flushScheduled = true;
+				property.IsFetchPending = true;
+				pendingFetches.Add(property);
+				schedule = ClaimFlush();
 			}
 
-			MyAPIGateway.Utilities.InvokeOnGameThread(Flush, "SENetworkAPI");
+			if (schedule)
+			{
+				MyAPIGateway.Utilities.InvokeOnGameThread(Flush, "SENetworkAPI");
+			}
+		}
+
+		internal static void QueueFetchAnswer(NetSync property, ulong sendTo)
+		{
+			bool schedule;
+
+			lock (locker)
+			{
+				pendingAnswers.Add(property);
+				pendingAnswerTargets.Add(sendTo);
+				schedule = ClaimFlush();
+			}
+
+			if (schedule)
+			{
+				MyAPIGateway.Utilities.InvokeOnGameThread(Flush, "SENetworkAPI");
+			}
+		}
+
+		private static bool ClaimFlush()
+		{
+			if (flushScheduled)
+			{
+				return false;
+			}
+
+			flushScheduled = true;
+			return true;
 		}
 
 		internal static void Flush()
@@ -141,15 +212,37 @@ namespace SENetworkAPI
 			{
 				flushScheduled = false;
 
-				if (pending.Count == 0)
-				{
-					return;
-				}
-
 				List<NetSync> swap = due;
 				due = pending;
 				pending = swap;
 				pending.Clear();
+
+				swap = dueFetches;
+				dueFetches = pendingFetches;
+				pendingFetches = swap;
+				pendingFetches.Clear();
+
+				swap = dueAnswers;
+				dueAnswers = pendingAnswers;
+				pendingAnswers = swap;
+				pendingAnswers.Clear();
+
+				List<ulong> swapTargets = dueAnswerTargets;
+				dueAnswerTargets = pendingAnswerTargets;
+				pendingAnswerTargets = swapTargets;
+				pendingAnswerTargets.Clear();
+			}
+
+			FlushUpdates();
+			FlushFetches();
+			FlushFetchAnswers();
+		}
+
+		private static void FlushUpdates()
+		{
+			if (due.Count == 0)
+			{
+				return;
 			}
 
 			for (int i = 0; i < due.Count; i++)
@@ -174,24 +267,96 @@ namespace SENetworkAPI
 					}
 				}
 
-				try
-				{
-					Send(first, batch);
-				}
-				catch (Exception e)
-				{
-					MyLog.Default.Error($"[NetworkAPI] _ERROR_ Flush(): Problem sending a batched update: {e}");
-				}
+				SendBatch(batch, first, ulong.MinValue, "updates");
 			}
 
 			due.Clear();
+		}
+
+		private static void FlushFetches()
+		{
+			if (dueFetches.Count == 0)
+			{
+				return;
+			}
+
+			batch.Clear();
+
+			for (int i = 0; i < dueFetches.Count; i++)
+			{
+				NetSync property = dueFetches[i];
+				property.IsFetchPending = false;
+
+				SyncData request = property.BuildFetch();
+
+				if (request != null)
+				{
+					batch.Add(request);
+				}
+			}
+
+			dueFetches.Clear();
+			SendBatch(batch, null, ulong.MinValue, "fetches");
+		}
+
+		private static void FlushFetchAnswers()
+		{
+			if (dueAnswers.Count == 0)
+			{
+				return;
+			}
+
+			for (int i = 0; i < dueAnswers.Count; i++)
+			{
+				if (dueAnswers[i] == null)
+				{
+					continue;
+				}
+
+				ulong target = dueAnswerTargets[i];
+				batch.Clear();
+				CollectAnswer(dueAnswers[i], target, batch);
+
+				for (int j = i + 1; j < dueAnswers.Count; j++)
+				{
+					if (dueAnswers[j] != null && dueAnswerTargets[j] == target)
+					{
+						CollectAnswer(dueAnswers[j], target, batch);
+						dueAnswers[j] = null;
+					}
+				}
+
+				SendBatch(batch, null, target, "fetch answers");
+			}
+
+			dueAnswers.Clear();
+			dueAnswerTargets.Clear();
+		}
+
+		private static void CollectAnswer(NetSync property, ulong sender, List<SyncData> into)
+		{
+			try
+			{
+				property.RaiseFetchRequest(sender);
+			}
+			catch (Exception e)
+			{
+				MyLog.Default.Error($"[NetworkAPI] BeforeFetchRequestResponse handler threw:\n{e}");
+			}
+
+			SyncData update = property.BuildUpdate(SyncType.Post);
+
+			if (update != null)
+			{
+				into.Add(update);
+			}
 		}
 
 		private static void Collect(NetSync property, List<SyncData> into)
 		{
 			property.IsDirty = false;
 
-			SyncData update = property.BuildUpdate();
+			SyncData update = property.BuildUpdate(SyncType.Broadcast);
 
 			if (update != null)
 			{
@@ -206,41 +371,60 @@ namespace SENetworkAPI
 				&& a.IsLossy == b.IsLossy;
 		}
 
-		private static void Send(NetSync group, List<SyncData> updates)
+		private static void SendBatch(List<SyncData> updates, NetSync group, ulong sendTo, string what)
 		{
 			if (updates.Count == 0 || !NetworkAPI.IsInitialized)
 			{
 				return;
 			}
 
-			ulong id = ulong.MinValue;
-			IMyPlayer localPlayer = MyAPIGateway.Session?.LocalHumanPlayer;
-
-			if (localPlayer != null)
+			try
 			{
-				id = localPlayer.SteamUserId;
+				ulong id = ulong.MinValue;
+				IMyPlayer localPlayer = MyAPIGateway.Session?.LocalHumanPlayer;
+
+				if (localPlayer != null)
+				{
+					id = localPlayer.SteamUserId;
+				}
+
+				bool isReliable = group == null || !group.IsLossy;
+				bool positional = group != null && group.LimitToSyncDistance && group.Entity != null;
+
+				for (int start = 0; start < updates.Count; start += MaxUpdatesPerPacket)
+				{
+					int count = Math.Min(MaxUpdatesPerPacket, updates.Count - start);
+					Command cmd = new Command() { IsProperty = true, SteamId = id };
+
+					if (count == 1)
+					{
+						cmd.Property = updates[start];
+					}
+					else
+					{
+						List<SyncData> carried = new List<SyncData>(count);
+
+						for (int i = 0; i < count; i++)
+						{
+							carried.Add(updates[start + i]);
+						}
+
+						cmd.Properties = carried;
+					}
+
+					if (positional)
+					{
+						NetworkAPI.Instance.SendCommand(cmd, group.Entity.PositionComp.GetPosition(), steamId: sendTo, isReliable: isReliable);
+					}
+					else
+					{
+						NetworkAPI.Instance.SendCommand(cmd, steamId: sendTo, isReliable: isReliable);
+					}
+				}
 			}
-
-			Command cmd = new Command() { IsProperty = true, SteamId = id };
-
-			if (updates.Count == 1)
+			catch (Exception e)
 			{
-				cmd.Property = updates[0];
-			}
-			else
-			{
-				cmd.Properties = new List<SyncData>(updates);
-			}
-
-			bool isReliable = !group.IsLossy;
-
-			if (group.LimitToSyncDistance && group.Entity != null)
-			{
-				NetworkAPI.Instance.SendCommand(cmd, group.Entity.PositionComp.GetPosition(), isReliable: isReliable);
-			}
-			else
-			{
-				NetworkAPI.Instance.SendCommand(cmd, isReliable: isReliable);
+				MyLog.Default.Error($"[NetworkAPI] _ERROR_ Flush(): Problem sending batched {what}: {e}");
 			}
 		}
 
@@ -295,16 +479,7 @@ namespace SENetworkAPI
 			property.LastMessageTimestamp = timestamp;
 			if (pack.SyncType == SyncType.Fetch)
 			{
-				try
-				{
-					property.BeforeFetchRequestResponse?.Invoke(sender);
-				}
-				catch (Exception e)
-				{
-					MyLog.Default.Error($"[NetworkAPI] BeforeFetchRequestResponse handler threw:\n{e}");
-				}
-
-				property.Push(SyncType.Post, sender);
+				QueueFetchAnswer(property, sender);
 			}
 			else
 			{
@@ -616,11 +791,30 @@ namespace SENetworkAPI
 			}
 		}
 
-		internal override SyncData BuildUpdate()
+		internal override SyncData BuildFetch()
+		{
+			if (!CanSend(SyncType.Fetch))
+			{
+				return null;
+			}
+
+			return new SyncData() {
+				Id = Id,
+				EntityId = (Entity != null) ? Entity.EntityId : 0,
+				SyncType = SyncType.Fetch
+			};
+		}
+
+		internal override void RaiseFetchRequest(ulong sender)
+		{
+			BeforeFetchRequestResponse?.Invoke(sender);
+		}
+
+		internal override SyncData BuildUpdate(SyncType syncType)
 		{
 			try
 			{
-				if (!CanSend(SyncType.Broadcast) || _value == null)
+				if (!CanSend(syncType) || _value == null)
 				{
 					return null;
 				}
@@ -629,7 +823,7 @@ namespace SENetworkAPI
 					Id = Id,
 					EntityId = (Entity != null) ? Entity.EntityId : 0,
 					Data = MyAPIGateway.Utilities.SerializeToBinary(_value),
-					SyncType = SyncType.Broadcast
+					SyncType = syncType
 				};
 			}
 			catch (Exception e)
@@ -766,7 +960,7 @@ namespace SENetworkAPI
 		{
 			if (!MyAPIGateway.Multiplayer.IsServer)
 			{
-				SendValue(SyncType.Fetch);
+				QueueFetch(this);
 			}
 		}
 

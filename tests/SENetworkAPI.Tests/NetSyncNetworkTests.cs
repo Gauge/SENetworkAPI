@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using SEStubs;
 using VRage.Game.Components;
 using VRage.Game.Entity;
@@ -246,6 +247,7 @@ namespace SENetworkAPI.Tests
 			Game.ClearTraffic();
 
 			Receive(EncodePropertyPacket(property.Id, 0, SyncType.Fetch, from: ClientId));
+			Game.NextFrame();
 
 			Assert.Single(Game.Sent);
 			Assert.Equal(77, StubSerializer.Deserialize<int>(DecodeSyncData(Game.Sent[0]).Data));
@@ -271,6 +273,7 @@ namespace SENetworkAPI.Tests
 			};
 
 			Receive(StubSerializer.Serialize(cmd));
+			Game.NextFrame();
 
 			Assert.Equal(99, other.Value);
 		}
@@ -312,6 +315,7 @@ namespace SENetworkAPI.Tests
 			Game.ClearTraffic();
 
 			Receive(EncodePropertyPacket(property.Id, 0, SyncType.Fetch, from: ClientId));
+			Game.NextFrame();
 
 			SentPacket reply = Assert.Single(Game.Sent);
 			Assert.Equal(PacketTarget.Direct, reply.Target);
@@ -331,6 +335,7 @@ namespace SENetworkAPI.Tests
 			Game.ClearTraffic();
 
 			Receive(EncodePropertyPacket(property.Id, 0, SyncType.Fetch, from: ClientId));
+			Game.NextFrame();
 
 			Assert.Equal(ClientId, requester);
 			// The hook's edit is visible in the reply.
@@ -372,6 +377,7 @@ namespace SENetworkAPI.Tests
 			Game.ClearTraffic();
 
 			Receive(EncodePropertyPacket(property.Id, entity.EntityId, SyncType.Fetch, from: ClientId));
+			Game.NextFrame();
 
 			SentPacket reply = Assert.Single(Game.Sent);
 			Assert.Equal(ClientId, reply.Recipient);
@@ -386,6 +392,7 @@ namespace SENetworkAPI.Tests
 			Game.ClearTraffic();
 
 			Receive(EncodePropertyPacket(property.Id, 0, SyncType.Fetch, from: ClientId));
+			Game.NextFrame();
 
 			Assert.Single(Game.Sent);
 		}
@@ -401,6 +408,7 @@ namespace SENetworkAPI.Tests
 			Game.ClearTraffic();
 
 			Receive(EncodePropertyPacket(property.Id, 0, SyncType.Fetch, from: HostId));
+			Game.NextFrame();
 
 			Assert.Single(Game.Sent);
 			Assert.Equal(SyncType.Post, DecodeSyncData(Game.Sent[0]).SyncType);
@@ -409,6 +417,152 @@ namespace SENetworkAPI.Tests
 		// -------------------------------------------------------------------
 		//  Fetch requests going out
 		// -------------------------------------------------------------------
+
+		// -------------------------------------------------------------------
+		//  Fetch batching
+		// -------------------------------------------------------------------
+
+		[Fact]
+		public void EveryFetchInAFrameSharesOnePacket()
+		{
+			// Joining a world means every property on every block that streams
+			// in asks for its value at once.
+			GivenClient();
+			MyEntity first = Game.CreateEntity();
+			MyEntity second = Game.CreateEntity();
+			NetSync<int>[] properties = new NetSync<int>[6] {
+				new NetSync<int>(first, TransferType.Both, 0, syncOnLoad: false),
+				new NetSync<int>(first, TransferType.Both, 0, syncOnLoad: false),
+				new NetSync<int>(first, TransferType.Both, 0, syncOnLoad: false),
+				new NetSync<int>(second, TransferType.Both, 0, syncOnLoad: false),
+				new NetSync<int>(second, TransferType.Both, 0, syncOnLoad: false),
+				new NetSync<int>(second, TransferType.Both, 0, syncOnLoad: false),
+			};
+			Game.ClearTraffic();
+
+			foreach (NetSync<int> property in properties)
+			{
+				property.Fetch();
+			}
+
+			Game.NextFrame();
+
+			SentPacket packet = Assert.Single(Game.Sent);
+			List<SyncData> requests = DecodeSyncDataList(packet);
+			Assert.Equal(6, requests.Count);
+			Assert.All(requests, r => Assert.Equal(SyncType.Fetch, r.SyncType));
+		}
+
+		[Fact]
+		public void SyncOnLoadFetchesShareOnePacketAsAGridStreamsIn()
+		{
+			GivenClient();
+			MyEntity[] blocks = new MyEntity[10];
+
+			for (int b = 0; b < blocks.Length; b++)
+			{
+				blocks[b] = Game.CreateEntity();
+				new NetSync<int>(blocks[b], TransferType.Both);
+				new NetSync<int>(blocks[b], TransferType.Both);
+			}
+
+			Game.ClearTraffic();
+
+			foreach (MyEntity block in blocks)
+			{
+				block.AddToScene();
+			}
+
+			Game.NextFrame();
+
+			Assert.Equal(20, DecodeSyncDataList(Assert.Single(Game.Sent)).Count);
+		}
+
+		[Fact]
+		public void AskingTwiceInOneFrameOnlyAsksOnce()
+		{
+			GivenClient();
+			NetSync<int> property = SessionProperty();
+			Game.ClearTraffic();
+
+			property.Fetch();
+			property.Fetch();
+			property.Fetch();
+			Game.NextFrame();
+
+			Assert.Single(DecodeSyncDataList(Assert.Single(Game.Sent)));
+		}
+
+		[Fact]
+		public void AnswersToOnePlayerShareOnePacket()
+		{
+			GivenServer();
+			NetSync<int> first = SessionProperty(start: 1);
+			NetSync<int> second = SessionProperty(start: 2);
+			Game.ClearTraffic();
+
+			Receive(EncodePropertyPacket(first.Id, 0, SyncType.Fetch, from: ClientId));
+			Receive(EncodePropertyPacket(second.Id, 0, SyncType.Fetch, from: ClientId));
+			Game.NextFrame();
+
+			SentPacket reply = Assert.Single(Game.Sent);
+			Assert.Equal(ClientId, reply.Recipient);
+			List<SyncData> answers = DecodeSyncDataList(reply);
+			Assert.Equal(new[] { 1, 2 }, answers.Select(a => StubSerializer.Deserialize<int>(a.Data)).ToArray());
+		}
+
+		[Fact]
+		public void EachPlayerGetsTheirOwnAnswerPacket()
+		{
+			GivenServer();
+			NetSync<int> property = SessionProperty(start: 7);
+			Game.ClearTraffic();
+
+			Receive(EncodePropertyPacket(property.Id, 0, SyncType.Fetch, from: 201));
+			Receive(EncodePropertyPacket(property.Id, 0, SyncType.Fetch, from: 202));
+			Game.NextFrame();
+
+			Assert.Equal(2, Game.Sent.Count);
+			Assert.Equal(new ulong[] { 201, 202 }, Game.Sent.Select(p => p.Recipient).OrderBy(id => id).ToArray());
+		}
+
+		[Fact]
+		public void ABatchIsSplitSoOnePacketNeverGrowsWithoutBound()
+		{
+			GivenClient();
+			int count = NetSync.MaxUpdatesPerPacket + 10;
+
+			for (int i = 0; i < count; i++)
+			{
+				SessionProperty().Fetch();
+			}
+
+			Game.ClearTraffic();
+			Game.NextFrame();
+
+			Assert.Equal(2, Game.Sent.Count);
+			Assert.Equal(NetSync.MaxUpdatesPerPacket, DecodeSyncDataList(Game.Sent[0]).Count);
+			Assert.Equal(10, DecodeSyncDataList(Game.Sent[1]).Count);
+		}
+
+		[Fact]
+		public void TheFetchHookRunsWhenTheAnswerIsBuiltNotWhenTheRequestArrives()
+		{
+			// The point of the hook is to refresh the value before it is read.
+			GivenServer();
+			NetSync<int> property = SessionProperty(start: 1);
+			bool answered = false;
+			property.BeforeFetchRequestResponse += id => { answered = true; property.SetValue(42); };
+
+			Receive(EncodePropertyPacket(property.Id, 0, SyncType.Fetch, from: ClientId));
+			Assert.False(answered);
+
+			Game.ClearTraffic();
+			Game.NextFrame();
+
+			Assert.True(answered);
+			Assert.Equal(42, StubSerializer.Deserialize<int>(DecodeSyncData(Assert.Single(Game.Sent)).Data));
+		}
 
 		[Fact]
 		public void Fetch_SendsThePropertyAddressToTheServer()
@@ -419,6 +573,7 @@ namespace SENetworkAPI.Tests
 			Game.ClearTraffic();
 
 			property.Fetch();
+			Game.NextFrame();
 
 			SentPacket packet = Assert.Single(Game.Sent);
 			Assert.Equal(PacketTarget.Server, packet.Target);

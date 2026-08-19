@@ -277,6 +277,7 @@ namespace SENetworkAPI.Tests
 			Game.ClearTraffic();
 
 			property.Fetch();
+			Game.NextFrame();
 
 			Assert.Equal(SyncType.Fetch, TheOnlySyncDataSent().SyncType);
 		}
@@ -409,7 +410,7 @@ namespace SENetworkAPI.Tests
 
 			Assert.Null(thrown);
 			Assert.Single(Game.Sent);
-			Assert.True(LoggedError("Problem sending a batched update"));
+			Assert.True(LoggedError("Problem sending batched"));
 		}
 
 		[Fact]

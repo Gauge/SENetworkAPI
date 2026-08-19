@@ -71,6 +71,7 @@ namespace SENetworkAPI.Tests
 			// --- client asks ----------------------------------------------
 			GivenClient();
 			DeclareSessionProperty(0).Fetch();
+			Game.NextFrame();
 			byte[] request = Assert.Single(Game.Sent).Data;
 
 			// --- server answers -------------------------------------------
@@ -80,6 +81,7 @@ namespace SENetworkAPI.Tests
 			Game.ClearTraffic();
 
 			Receive(request);
+			Game.NextFrame();
 
 			SentPacket reply = Assert.Single(Game.Sent);
 			Assert.Equal(PacketTarget.Direct, reply.Target);
@@ -105,6 +107,7 @@ namespace SENetworkAPI.Tests
 			Game.ClearTraffic();
 
 			new NetSync<int>(new TestSessionComponent(), TransferType.ServerToClient);
+			Game.NextFrame();
 			byte[] request = Assert.Single(Game.Sent).Data;
 
 			Restart();
@@ -113,6 +116,7 @@ namespace SENetworkAPI.Tests
 			Game.ClearTraffic();
 
 			Receive(request);
+			Game.NextFrame();
 
 			Assert.Equal(7, StubSerializer.Deserialize<int>(DecodeSyncData(Assert.Single(Game.Sent)).Data));
 		}

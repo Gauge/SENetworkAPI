@@ -383,6 +383,7 @@ namespace SENetworkAPI.Tests
 			Game.ClearTraffic();
 
 			property.Fetch();
+			Game.NextFrame();
 
 			Assert.True(Assert.Single(Game.Sent).Reliable);
 		}
@@ -482,6 +483,7 @@ namespace SENetworkAPI.Tests
 			Game.ClearTraffic();
 
 			property.Fetch();
+			Game.NextFrame();
 
 			Assert.Equal(SyncType.Fetch, TheOnlySyncDataSent().SyncType);
 		}
@@ -495,6 +497,7 @@ namespace SENetworkAPI.Tests
 			Game.ClearTraffic();
 
 			property.Fetch();
+			Game.NextFrame();
 
 			Assert.Null(TheOnlySyncDataSent().Data);
 		}
@@ -539,6 +542,7 @@ namespace SENetworkAPI.Tests
 			Game.ClearTraffic();
 
 			property.Fetch();
+			Game.NextFrame();
 
 			Assert.Equal(SyncType.Fetch, TheOnlySyncDataSent().SyncType);
 		}

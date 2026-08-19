@@ -169,6 +169,7 @@ namespace SENetworkAPI.Tests
 			Game.ClearTraffic();
 
 			entity.AddToScene();
+			Game.NextFrame();
 
 			SyncData sync = TheOnlySyncDataSent();
 			Assert.Equal(SyncType.Fetch, sync.SyncType);
@@ -210,6 +211,7 @@ namespace SENetworkAPI.Tests
 			Game.ClearTraffic();
 
 			new NetSync<int>(new TestSessionComponent(), TransferType.Both);
+			Game.NextFrame();
 
 			SyncData sync = TheOnlySyncDataSent();
 			Assert.Equal(SyncType.Fetch, sync.SyncType);
