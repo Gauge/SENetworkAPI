@@ -11,6 +11,17 @@ namespace SENetworkAPI.Tests
 		private class UnloadTestComponent : VRage.Game.Components.MySessionComponentBase { }
 
 		[Fact]
+		public void TheVersionIsStampedIntoTheStartupLog()
+		{
+			// Mods embed these sources, so a bug report has no other way to say
+			// which build it came from.
+			GivenServer();
+
+			Assert.False(string.IsNullOrWhiteSpace(NetworkAPI.Version));
+			Assert.True(LoggedInfo($"Version: {NetworkAPI.Version}"));
+		}
+
+		[Fact]
 		public void Init_OnServer_CreatesServerInstance()
 		{
 			NetworkAPI api = GivenServer();

@@ -16,6 +16,13 @@ namespace SENetworkAPI
 	/// </summary>
 	public abstract class NetworkAPI
 	{
+		/// <summary>
+		/// Version of the API these sources came from. Mods embed the source
+		/// rather than referencing a binary, so this is the only way to tell
+		/// which build a given mod is carrying.
+		/// </summary>
+		public const string Version = "2.0.0";
+
 		/// <summary>The instance for this mod. Null until <see cref="Init"/> is called.</summary>
 		public static NetworkAPI Instance = null;
 		/// <summary>True once <see cref="Init"/> has run.</summary>
@@ -115,7 +122,7 @@ namespace SENetworkAPI
 			MyAPIGateway.Multiplayer.UnregisterMessageHandler(ComId, HandleIncomingPacket);
 			MyAPIGateway.Multiplayer.RegisterMessageHandler(ComId, HandleIncomingPacket);
 
-			MyLog.Default.Info($"[NetworkAPI] Initialized. Type: {GetType().Name} ComId: {ComId} Name: {ModName} Keyword: {Keyword}");
+			MyLog.Default.Info($"[NetworkAPI] Initialized. Version: {Version} Type: {GetType().Name} ComId: {ComId} Name: {ModName} Keyword: {Keyword}");
 		}
 
 		private void HandleChatInput(string messageText, ref bool sendToOthers)
