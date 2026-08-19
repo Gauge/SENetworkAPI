@@ -53,6 +53,8 @@ namespace SENetworkAPI
 			{
 				PropertiesByEntity.Clear();
 				PropertyById.Clear();
+				pending.Clear();
+				flushScheduled = false;
 				generatorId = 1;
 			}
 		}
@@ -83,6 +85,23 @@ namespace SENetworkAPI
 		public long LastMessageTimestamp { get; internal set; }
 
 		/// <summary>
+		/// The entity this property belongs to, or null for a session property.
+		/// </summary>
+		internal MyEntity Entity;
+
+		/// <summary>
+		/// Batch this property's updates with the other coalesced properties
+		/// that change in the same frame. See NetSync&lt;T&gt;.Coalesce().
+		/// </summary>
+		internal bool Coalesced;
+
+		/// <summary>Sends this property's updates unreliably when they fit.</summary>
+		internal bool IsLossy;
+
+		/// <summary>Set while this property is waiting in the pending batch.</summary>
+		internal bool IsDirty;
+
+		/// <summary>
 		/// Request the lastest value from the server
 		/// </summary>
 		public abstract void Fetch();
@@ -96,6 +115,156 @@ namespace SENetworkAPI
 		internal abstract void Push(SyncType type, ulong sendTo);
 
 		internal abstract void SetNetworkValue(byte[] data, ulong sender);
+
+		/// <summary>
+		/// Builds the update to put in a batch, or returns null when this
+		/// property should not send right now (wrong direction, no value yet,
+		/// offline). Mirrors the checks a direct send makes.
+		/// </summary>
+		internal abstract SyncData BuildUpdate();
+
+		// ------------------------------------------------------------------
+		//  Coalescing
+		// ------------------------------------------------------------------
+
+		private static readonly List<NetSync> pending = new List<NetSync>();
+		private static readonly List<SyncData> batch = new List<SyncData>();
+		private static bool flushScheduled;
+
+		/// <summary>
+		/// Queues this property to be sent with everything else that changes
+		/// this frame. The flush runs on the game thread on the next update.
+		/// </summary>
+		internal static void QueueForFlush(NetSync property)
+		{
+			lock (locker)
+			{
+				if (property.IsDirty)
+				{
+					return;
+				}
+
+				property.IsDirty = true;
+				pending.Add(property);
+
+				if (flushScheduled)
+				{
+					return;
+				}
+
+				flushScheduled = true;
+			}
+
+			MyAPIGateway.Utilities.InvokeOnGameThread(Flush, "SENetworkAPI");
+		}
+
+		/// <summary>
+		/// Sends everything queued this frame, one packet per group of
+		/// properties that share a destination.
+		/// </summary>
+		internal static void Flush()
+		{
+			List<NetSync> due;
+
+			lock (locker)
+			{
+				flushScheduled = false;
+
+				if (pending.Count == 0)
+				{
+					return;
+				}
+
+				due = new List<NetSync>(pending);
+				pending.Clear();
+			}
+
+			for (int i = 0; i < due.Count; i++)
+			{
+				NetSync first = due[i];
+
+				if (!first.IsDirty)
+				{
+					continue;
+				}
+
+				batch.Clear();
+				Collect(first, batch);
+
+				// Everything in the group shares an owner, a distance rule and
+				// a reliability choice, so one packet covers them all.
+				for (int j = i + 1; j < due.Count; j++)
+				{
+					NetSync other = due[j];
+
+					if (other.IsDirty && SharesDestination(first, other))
+					{
+						Collect(other, batch);
+					}
+				}
+
+				Send(first, batch);
+			}
+		}
+
+		private static void Collect(NetSync property, List<SyncData> into)
+		{
+			property.IsDirty = false;
+
+			SyncData update = property.BuildUpdate();
+
+			if (update != null)
+			{
+				into.Add(update);
+			}
+		}
+
+		private static bool SharesDestination(NetSync a, NetSync b)
+		{
+			return a.Entity == b.Entity
+				&& a.LimitToSyncDistance == b.LimitToSyncDistance
+				&& a.IsLossy == b.IsLossy;
+		}
+
+		private static void Send(NetSync group, List<SyncData> updates)
+		{
+			if (updates.Count == 0 || !NetworkAPI.IsInitialized)
+			{
+				return;
+			}
+
+			ulong id = ulong.MinValue;
+			IMyPlayer localPlayer = MyAPIGateway.Session?.LocalHumanPlayer;
+
+			if (localPlayer != null)
+			{
+				id = localPlayer.SteamUserId;
+			}
+
+			Command cmd = new Command() { IsProperty = true, SteamId = id };
+
+			// One update is the common case even when coalescing: keep it off
+			// the list field so the packet stays as small as a direct send.
+			if (updates.Count == 1)
+			{
+				cmd.Property = updates[0];
+			}
+			else
+			{
+				cmd.Properties = new List<SyncData>(updates);
+			}
+
+			bool isReliable = !group.IsLossy;
+
+			if (group.LimitToSyncDistance && group.Entity != null)
+			{
+				NetworkAPI.Instance.SendCommand(cmd, group.Entity.PositionComp.GetPosition(), isReliable: isReliable);
+			}
+			else
+			{
+				NetworkAPI.Instance.SendCommand(cmd, isReliable: isReliable);
+			}
+		}
 
 		/// <summary>
 		/// Receives and redirects all property traffic
@@ -190,10 +359,8 @@ namespace SENetworkAPI
 		}
 
 		private T _value;
-		private MyEntity Entity;
 		private string sessionName;
 		private bool alwaysSend;
-		private bool lossy;
 
 		/// <summary>
 		/// Whether comparing two values of T is both cheap and meaningful.
@@ -397,7 +564,22 @@ namespace SENetworkAPI
 		/// </summary>
 		public NetSync<T> Lossy(bool enabled = true)
 		{
-			lossy = enabled;
+			IsLossy = enabled;
+			return this;
+		}
+
+		/// <summary>
+		/// Batches this property's updates with every other coalesced property
+		/// that changes in the same frame, so a block whose properties move
+		/// together costs one packet instead of one each.
+		///
+		/// The update goes out on the next game update rather than immediately,
+		/// so it trades a frame of latency for the traffic. <see cref="Push()"/>
+		/// still sends straight away.
+		/// </summary>
+		public NetSync<T> Coalesce(bool enabled = true)
+		{
+			Coalesced = enabled;
 			return this;
 		}
 
@@ -416,7 +598,17 @@ namespace SENetworkAPI
 
 			_value = val;
 
-			SendValue(syncType);
+			// A coalesced property waits for the frame's flush; anything else
+			// (Fetch, Post, None) keeps its immediate behaviour.
+			if (Coalesced && syncType == SyncType.Broadcast)
+			{
+				QueueForFlush(this);
+			}
+			else
+			{
+				SendValue(syncType);
+			}
+
 			ValueChanged?.Invoke(oldval, val);
 		}
 
@@ -473,6 +665,58 @@ namespace SENetworkAPI
 		}
 
 		/// <summary>
+		/// Builds this property's contribution to a batched packet, applying the
+		/// same rules a direct send would.
+		/// </summary>
+		internal override SyncData BuildUpdate()
+		{
+			try
+			{
+				if (!CanSend(SyncType.Broadcast) || _value == null)
+				{
+					return null;
+				}
+
+				return new SyncData() {
+					Id = Id,
+					EntityId = (Entity != null) ? Entity.EntityId : 0,
+					Data = MyAPIGateway.Utilities.SerializeToBinary(_value),
+					SyncType = SyncType.Broadcast
+				};
+			}
+			catch (Exception e)
+			{
+				MyLog.Default.Error($"[NetworkAPI] _ERROR_ BuildUpdate(): Problem encoding value: {e}");
+				return null;
+			}
+		}
+
+		/// <summary>
+		/// Whether the network will accept this update: initialised, online, and
+		/// travelling in a direction this property allows.
+		/// </summary>
+		private bool CanSend(SyncType syncType)
+		{
+			if (!NetworkAPI.IsInitialized || syncType == SyncType.None)
+			{
+				return false;
+			}
+
+			bool isServer = MyAPIGateway.Multiplayer.IsServer;
+
+			if (syncType != SyncType.Fetch &&
+				((TransferType == TransferType.ServerToClient && !isServer) ||
+				 (TransferType == TransferType.ClientToServer && isServer)))
+			{
+				return false;
+			}
+
+			IMySession session = MyAPIGateway.Session;
+
+			return session == null || session.OnlineMode != MyOnlineModeEnum.OFFLINE;
+		}
+
+		/// <summary>
 		/// sends the value across the network
 		/// </summary>
 		/// <param name="serializedValue">
@@ -481,6 +725,9 @@ namespace SENetworkAPI
 		/// </param>
 		private void SendValue(SyncType syncType = SyncType.Broadcast, ulong sendTo = ulong.MinValue, byte[] serializedValue = null)
 		{
+			// This value is going out now, so drop any batched copy of it.
+			IsDirty = false;
+
 			try
 			{
 				if (!NetworkAPI.IsInitialized)
@@ -570,7 +817,7 @@ namespace SENetworkAPI
 
 				// A lost fetch means the value never arrives at all, so requests
 				// stay reliable however the property is configured.
-				bool isReliable = !lossy || syncType == SyncType.Fetch;
+				bool isReliable = !IsLossy || syncType == SyncType.Fetch;
 
 				if (LimitToSyncDistance && Entity != null)
 				{

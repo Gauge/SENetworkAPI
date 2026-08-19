@@ -48,9 +48,10 @@ namespace SENetworkAPI.Tests
 		{
 			NetworkAPI.Instance = null;
 			NetworkAPI.LogNetworkTraffic = false;
-			NetSync.PropertiesByEntity.Clear();
-			NetSync.PropertyById.Clear();
-			NetSync.generatorId = 1;
+			NetworkAPI.CompressionThreshold = 1024;
+			// The production reset, so the suite exercises it and cannot drift
+			// from it (it also clears the pending coalesced batch).
+			NetSync.ClearRegistries();
 			MyLog.Default.Clear();
 		}
 

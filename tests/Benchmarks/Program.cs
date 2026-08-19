@@ -35,6 +35,7 @@ namespace SENetworkAPI.Benchmarks
 			Measure("entity property assign, 8 players in range", EntityPropertyAssignInRange);
 			Measure("entity property assign, 64 players, 8 in range", EntityPropertyAssignManyPlayers);
 			Measure("8 properties on a block, same frame, 64 players", BlockOfPropertiesPerFrame);
+			Measure("  ... the same, coalesced", BlockOfPropertiesCoalesced);
 			Measure("property fetch (client -> server)", PropertyFetch);
 			Measure("server broadcast command, 32 byte payload", ServerBroadcast);
 			Measure("server receives + relays a property update", ServerReceiveAndRelay);
@@ -92,9 +93,7 @@ namespace SENetworkAPI.Benchmarks
 			_game?.Dispose();
 			NetworkAPI.Instance = null;
 			NetworkAPI.LogNetworkTraffic = false;
-			NetSync.PropertiesByEntity.Clear();
-			NetSync.PropertyById.Clear();
-			NetSync.generatorId = 1;
+			NetSync.ClearRegistries();
 			VRage.Utils.MyLog.Default.Clear();
 		}
 
@@ -207,6 +206,32 @@ namespace SENetworkAPI.Benchmarks
 					properties[i].Value = tick + i;
 				}
 
+				Drain();
+			};
+		}
+
+		private static Action BlockOfPropertiesCoalesced()
+		{
+			FakeGame game = Server(players: 64, spread: 1000);
+			MyEntity entity = game.CreateEntity(Vector3D.Zero);
+			NetSync<int>[] properties = new NetSync<int>[8];
+
+			for (int i = 0; i < properties.Length; i++)
+			{
+				properties[i] = new NetSync<int>(entity, TransferType.Both, 0, syncOnLoad: false).Coalesce();
+			}
+
+			int tick = 0;
+			return () =>
+			{
+				tick++;
+
+				for (int i = 0; i < properties.Length; i++)
+				{
+					properties[i].Value = tick + i;
+				}
+
+				game.NextFrame();
 				Drain();
 			};
 		}
