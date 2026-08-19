@@ -59,6 +59,9 @@ namespace SEStubs
 		public IMyPlayer LocalHumanPlayer { get; set; }
 		public MyObjectBuilder_SessionSettings SessionSettings { get; set; } = new MyObjectBuilder_SessionSettings();
 		public MyOnlineModeEnum OnlineMode { get; set; } = MyOnlineModeEnum.PUBLIC;
+
+		/// <summary>Advanced by <see cref="FakeGame.NextFrame"/>.</summary>
+		public int GameplayFrameCounter { get; set; }
 	}
 
 	public sealed class FakeUtilities : IMyUtilities
@@ -71,6 +74,14 @@ namespace SEStubs
 
 		/// <summary>When set and it returns true for the requested type, deserialization throws.</summary>
 		public Predicate<Type> FailDeserializeFor;
+
+		/// <summary>Work scheduled for the next update, drained by FakeGame.NextFrame.</summary>
+		public readonly List<Action> Scheduled = new List<Action>();
+
+		public void InvokeOnGameThread(Action action, string invokerName = "Mod", int StartAt = 1, int RepeatTimes = 0)
+		{
+			Scheduled.Add(action);
+		}
 
 		public void ShowMessage(string sender, string messageText)
 		{
@@ -358,6 +369,28 @@ namespace SEStubs
 			}
 
 			return Entities.Add(entity);
+		}
+
+		/// <summary>
+		/// Advances the frame counter and runs anything scheduled with
+		/// InvokeOnGameThread, as the game's update loop would.
+		/// </summary>
+		public void NextFrame()
+		{
+			Session.GameplayFrameCounter++;
+
+			if (Utilities.Scheduled.Count == 0)
+			{
+				return;
+			}
+
+			Action[] due = Utilities.Scheduled.ToArray();
+			Utilities.Scheduled.Clear();
+
+			foreach (Action action in due)
+			{
+				action();
+			}
 		}
 
 		public void ClearTraffic()

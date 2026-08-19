@@ -96,6 +96,70 @@ namespace SENetworkAPI
 		internal abstract void Push(SyncType type, ulong sendTo);
 
 		internal abstract void SetNetworkValue(byte[] data, ulong sender);
+
+		/// <summary>
+		/// Receives and redirects all property traffic
+		/// </summary>
+		/// <param name="pack">this hold the path to the property and the data to sync</param>
+		internal static void RouteMessage(SyncData pack, ulong sender, long timestamp)
+		{
+			if (pack == null)
+			{
+				MyLog.Default.Error($"[NetworkAPI] Property data is null");
+				return;
+			}
+
+			if (NetworkAPI.LogNetworkTraffic)
+			{
+				MyLog.Default.Info($"[NetworkAPI] Id:{pack.Id}, EId:{pack.EntityId}, {pack.SyncType}");
+			}
+
+			NetSync property;
+			if (pack.EntityId == 0)
+			{
+				if (!PropertyById.TryGetValue(pack.Id, out property))
+				{
+					MyLog.Default.Info($"[NetworkAPI] id not registered in dictionary 'PropertyById'");
+					return;
+				}
+			}
+			else
+			{
+				MyEntity entity = (MyEntity)MyAPIGateway.Entities.GetEntityById(pack.EntityId);
+
+				if (entity == null)
+				{
+					MyLog.Default.Info($"[NetworkAPI] Failed to get entity by id");
+					return;
+				}
+
+				List<NetSync> properties;
+				if (!PropertiesByEntity.TryGetValue(entity, out properties))
+				{
+					MyLog.Default.Info($"[NetworkAPI] Entity not registered in dictionary 'PropertiesByEntity'");
+					return;
+				}
+
+				if (pack.Id < 0 || pack.Id >= properties.Count)
+				{
+					MyLog.Default.Info($"[NetworkAPI] property index out of range");
+					return;
+				}
+
+				property = properties[(int)pack.Id];
+			}
+
+			property.LastMessageTimestamp = timestamp;
+			if (pack.SyncType == SyncType.Fetch)
+			{
+				property.BeforeFetchRequestResponse?.Invoke(sender);
+				property.Push(SyncType.Post, sender);
+			}
+			else
+			{
+				property.SetNetworkValue(pack.Data, sender);
+			}
+		}
 	}
 
 	public class NetSync<T> : NetSync
@@ -439,80 +503,16 @@ namespace SENetworkAPI
 
 				if (LimitToSyncDistance && Entity != null)
 				{
-					NetworkAPI.Instance.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data), SteamId = id }, Entity.PositionComp.GetPosition(), steamId: sendTo);
+					NetworkAPI.Instance.SendCommand(new Command() { IsProperty = true, Property = data, SteamId = id }, Entity.PositionComp.GetPosition(), steamId: sendTo);
 				}
 				else
 				{
-					NetworkAPI.Instance.SendCommand(new Command() { IsProperty = true, Data = MyAPIGateway.Utilities.SerializeToBinary(data), SteamId = id }, steamId: sendTo);
+					NetworkAPI.Instance.SendCommand(new Command() { IsProperty = true, Property = data, SteamId = id }, steamId: sendTo);
 				}
 			}
 			catch (Exception e)
 			{
 				MyLog.Default.Error($"[NetworkAPI] _ERROR_ SendValue(): Problem syncing value: {e}");
-			}
-		}
-
-		/// <summary>
-		/// Receives and redirects all property traffic
-		/// </summary>
-		/// <param name="pack">this hold the path to the property and the data to sync</param>
-		internal static void RouteMessage(SyncData pack, ulong sender, long timestamp)
-		{
-			if (pack == null)
-			{
-				MyLog.Default.Error($"[NetworkAPI] Property data is null");
-				return;
-			}
-
-			if (NetworkAPI.LogNetworkTraffic)
-			{
-				MyLog.Default.Info($"[NetworkAPI] Id:{pack.Id}, EId:{pack.EntityId}, {pack.SyncType}");
-			}
-
-			NetSync property;
-			if (pack.EntityId == 0)
-			{
-				if (!PropertyById.TryGetValue(pack.Id, out property))
-				{
-					MyLog.Default.Info($"[NetworkAPI] id not registered in dictionary 'PropertyById'");
-					return;
-				}
-			}
-			else
-			{
-				MyEntity entity = (MyEntity)MyAPIGateway.Entities.GetEntityById(pack.EntityId);
-
-				if (entity == null)
-				{
-					MyLog.Default.Info($"[NetworkAPI] Failed to get entity by id");
-					return;
-				}
-
-				List<NetSync> properties;
-				if (!PropertiesByEntity.TryGetValue(entity, out properties))
-				{
-					MyLog.Default.Info($"[NetworkAPI] Entity not registered in dictionary 'PropertiesByEntity'");
-					return;
-				}
-
-				if (pack.Id < 0 || pack.Id >= properties.Count)
-				{
-					MyLog.Default.Info($"[NetworkAPI] property index out of range");
-					return;
-				}
-
-				property = properties[(int)pack.Id];
-			}
-
-			property.LastMessageTimestamp = timestamp;
-			if (pack.SyncType == SyncType.Fetch)
-			{
-				property.BeforeFetchRequestResponse?.Invoke(sender);
-				property.Push(SyncType.Post, sender);
-			}
-			else
-			{
-				property.SetNetworkValue(pack.Data, sender);
 			}
 		}
 

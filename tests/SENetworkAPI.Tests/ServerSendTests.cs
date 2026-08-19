@@ -315,13 +315,57 @@ namespace SENetworkAPI.Tests
 			// so the data disappears without a trace.
 			Server server = GivenServer();
 			Game.ClearTraffic();
+			byte[] incompressible = new byte[4096];
+			new Random(7).NextBytes(incompressible);
 
-			server.SendCommand("bulk", data: new byte[4096], isReliable: false);
+			server.SendCommand("bulk", data: incompressible, isReliable: false);
 
 			Assert.Empty(Game.Sent);
 			Assert.Single(Game.Multiplayer.Dropped);
 			Assert.False(LoggedError("dropped"));
 			Assert.False(LoggedWarning("dropped"));
+		}
+
+		[Fact]
+		public void CompressionCanBringAnUnreliableSendUnderTheLimit()
+		{
+			// Compression runs before the engine's size check, so a compressible
+			// payload that would otherwise be dropped now fits.
+			Server server = GivenServer();
+			Game.ClearTraffic();
+
+			server.SendCommand("bulk", data: new byte[4096], isReliable: false);
+
+			Assert.Single(Game.Sent);
+			Assert.Empty(Game.Multiplayer.Dropped);
+		}
+
+		[Fact]
+		public void CompressionIsSkippedWhenItWouldNotHelp()
+		{
+			// Random data does not compress; keeping the "compressed" copy would
+			// make the packet bigger and cost the receiver a decompression.
+			Server server = GivenServer();
+			Game.ClearTraffic();
+			byte[] incompressible = new byte[4096];
+			new Random(11).NextBytes(incompressible);
+
+			server.SendCommand("bulk", data: incompressible);
+
+			Command cmd = TheOnlyCommandSent();
+			Assert.False(cmd.IsCompressed);
+			Assert.Equal(incompressible, cmd.Data);
+		}
+
+		[Fact]
+		public void PayloadsOverTheThresholdAreCompressed()
+		{
+			Server server = GivenServer();
+			Game.ClearTraffic();
+
+			server.SendCommand("bulk", data: new byte[NetworkAPI.CompressionThreshold + 1]);
+
+			Assert.True(StubSerializer.Deserialize<Command>(Game.Sent[0].Data).IsCompressed);
 		}
 
 		[Fact]
@@ -334,32 +378,6 @@ namespace SENetworkAPI.Tests
 
 			Assert.Single(Game.Sent);
 			Assert.Empty(Game.Multiplayer.Dropped);
-		}
-
-		[Fact]
-		public void WhetherAnUnreliableSendSurvivesDependsOnHowWellItCompresses()
-		{
-			// Compression runs before the engine's size check, so the limit
-			// applies to the compressed packet. A 100KB block of zeroes squeezes
-			// under 1024 bytes and goes through...
-			Server server = GivenServer();
-			Game.ClearTraffic();
-
-			server.SendCommand("zeroes", data: new byte[NetworkAPI.CompressionThreshold + 1], isReliable: false);
-
-			Assert.Single(Game.Sent);
-			Assert.Empty(Game.Multiplayer.Dropped);
-
-			// ...while the same size of incompressible data is dropped, as is
-			// any payload between 1KB and the 100KB compression threshold.
-			Game.ClearTraffic();
-			byte[] random = new byte[NetworkAPI.CompressionThreshold + 1];
-			new Random(99).NextBytes(random);
-
-			server.SendCommand("random", data: random, isReliable: false);
-
-			Assert.Empty(Game.Sent);
-			Assert.Single(Game.Multiplayer.Dropped);
 		}
 
 		[Fact]

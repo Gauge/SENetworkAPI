@@ -20,6 +20,7 @@ namespace VRage.Game.ModAPI
 		bool IsDedicated { get; }
 		event MessageEnteredDel MessageEntered;
 		void ShowMessage(string sender, string messageText);
+		void InvokeOnGameThread(Action action, string invokerName = "Mod", int StartAt = 1, int RepeatTimes = 0);
 		byte[] SerializeToBinary<T>(T obj);
 		T SerializeFromBinary<T>(byte[] data);
 	}
@@ -49,6 +50,7 @@ namespace VRage.Game.ModAPI
 		IMyPlayer LocalHumanPlayer { get; }
 		MyObjectBuilder_SessionSettings SessionSettings { get; }
 		MyOnlineModeEnum OnlineMode { get; }
+		int GameplayFrameCounter { get; }
 	}
 
 	public interface IMyPlayerCollection

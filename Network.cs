@@ -14,7 +14,45 @@ namespace SENetworkAPI
 		public static NetworkAPI Instance = null;
 		public static bool IsInitialized => Instance != null;
 		public static bool LogNetworkTraffic = false;
-		public const int CompressionThreshold = 100000;
+
+		/// <summary>
+		/// Payloads larger than this are compressed before sending. The old
+		/// value of 100000 was far above both the network MTU and the engine's
+		/// 1024 byte ceiling for unreliable messages, so nothing under 100KB was
+		/// ever compressed. Compression is self describing - packets carry a
+		/// flag - so changing this is safe at any time and needs no agreement
+		/// between the two ends.
+		/// </summary>
+		public static int CompressionThreshold = 1024;
+
+		/// <summary>
+		/// The engine drops any unreliable message longer than this, silently.
+		/// </summary>
+		public const int UnreliableMessageLimit = 1024;
+
+		/// <summary>
+		/// Compresses the payload when it is over the threshold, keeping the
+		/// result only if it actually came out smaller. Safe to call more than
+		/// once on the same command; only the first call can do anything.
+		/// </summary>
+		internal static void Compress(Command cmd)
+		{
+			if (cmd.IsCompressed || cmd.Data == null || cmd.Data.Length <= CompressionThreshold)
+			{
+				return;
+			}
+
+			byte[] compressed = MyCompression.Compress(cmd.Data);
+
+			// Small or already-compressed payloads can come out bigger.
+			if (compressed.Length >= cmd.Data.Length)
+			{
+				return;
+			}
+
+			cmd.Data = compressed;
+			cmd.IsCompressed = true;
+		}
 
 		/// <summary>
 		/// Event triggers apon reciveing data over the network
@@ -182,7 +220,23 @@ namespace SENetworkAPI
 
 				if (cmd.IsProperty)
 				{
-					NetSync<object>.RouteMessage(MyAPIGateway.Utilities.SerializeFromBinary<SyncData>(cmd.Data), cmd.SteamId, cmd.Timestamp);
+					if (cmd.Property != null)
+					{
+						NetSync.RouteMessage(cmd.Property, cmd.SteamId, cmd.Timestamp);
+					}
+					else if (cmd.Properties != null)
+					{
+						for (int i = 0; i < cmd.Properties.Count; i++)
+						{
+							NetSync.RouteMessage(cmd.Properties[i], cmd.SteamId, cmd.Timestamp);
+						}
+					}
+					else
+					{
+						// A packet from a build using the original layout, which
+						// shipped the update as pre-encoded bytes in Data.
+						NetSync.RouteMessage(MyAPIGateway.Utilities.SerializeFromBinary<SyncData>(cmd.Data), cmd.SteamId, cmd.Timestamp);
+					}
 				}
 				else
 				{

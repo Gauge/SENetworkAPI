@@ -51,13 +51,7 @@ namespace SENetworkAPI
 		/// <param name="isReliable">Makes sure the message is recieved by the server</param>
 		internal override void SendCommand(Command cmd, ulong steamId = ulong.MinValue, bool isReliable = true)
 		{
-			// Guarded so a command that is sent more than once is not compressed
-			// on top of itself, which the receiver would only unwrap once.
-			if (!cmd.IsCompressed && cmd.Data != null && cmd.Data.Length > CompressionThreshold)
-			{
-				cmd.Data = MyCompression.Compress(cmd.Data);
-				cmd.IsCompressed = true;
-			}
+			Compress(cmd);
 
 			// Only stamp commands that do not carry one already: NetSync builds
 			// its packets without a timestamp, but a caller that passed `sent`

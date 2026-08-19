@@ -107,19 +107,6 @@ namespace SENetworkAPI
 		}
 
 		/// <summary>
-		/// Compresses the payload if it is worth it. Safe to call more than once
-		/// on the same command; only the first call does anything.
-		/// </summary>
-		private static void Compress(Command cmd)
-		{
-			if (!cmd.IsCompressed && cmd.Data != null && cmd.Data.Length > CompressionThreshold)
-			{
-				cmd.Data = MyCompression.Compress(cmd.Data);
-				cmd.IsCompressed = true;
-			}
-		}
-
-		/// <summary>
 		/// Sends a command packet to the client(s)
 		/// </summary>
 		/// <param name="cmd">The object to be sent to the client</param>

@@ -121,9 +121,28 @@ namespace SENetworkAPI.Tests
 		/// <summary>Decodes the property payload carried by a captured packet.</summary>
 		internal static SyncData DecodeSyncData(SentPacket packet)
 		{
+			List<SyncData> properties = DecodeSyncDataList(packet);
+			Assert.Single(properties);
+			return properties[0];
+		}
+
+		/// <summary>Decodes every property update in a captured packet, in either layout.</summary>
+		internal static List<SyncData> DecodeSyncDataList(SentPacket packet)
+		{
 			Command cmd = DecodeCommand(packet);
 			Assert.True(cmd.IsProperty, "Packet is not a property packet");
-			return StubSerializer.Deserialize<SyncData>(cmd.Data);
+
+			if (cmd.Property != null)
+			{
+				return new List<SyncData> { cmd.Property };
+			}
+
+			if (cmd.Properties != null)
+			{
+				return cmd.Properties;
+			}
+
+			return new List<SyncData> { StubSerializer.Deserialize<SyncData>(cmd.Data) };
 		}
 
 		internal Command TheOnlyCommandSent()
@@ -176,9 +195,32 @@ namespace SENetworkAPI.Tests
 
 			Command cmd = new Command {
 				IsProperty = true,
-				Data = StubSerializer.Serialize(sync),
+				Property = sync,
 				SteamId = from,
 				Timestamp = timestamp ?? DateTime.UtcNow.Ticks,
+			};
+
+			return StubSerializer.Serialize(cmd);
+		}
+
+		/// <summary>
+		/// Builds a property packet in the original layout, where the update was
+		/// a serialized SyncData in Command.Data.
+		/// </summary>
+		protected static byte[] EncodeLegacyPropertyPacket(long id, long entityId, SyncType syncType, object value = null, ulong from = 0)
+		{
+			SyncData sync = new SyncData {
+				Id = id,
+				EntityId = entityId,
+				SyncType = syncType,
+				Data = value == null ? null : SerializeValue(value),
+			};
+
+			Command cmd = new Command {
+				IsProperty = true,
+				Data = StubSerializer.Serialize(sync),
+				SteamId = from,
+				Timestamp = DateTime.UtcNow.Ticks,
 			};
 
 			return StubSerializer.Serialize(cmd);

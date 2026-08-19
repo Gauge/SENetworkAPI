@@ -119,6 +119,34 @@ namespace SENetworkAPI.Tests
 			Assert.True(LoggedError("Failed to deserialize network property data"));
 		}
 
+		[Fact]
+		public void APacketInTheOriginalLayoutIsStillUnderstood()
+		{
+			// Builds from before the flattened layout put the update in
+			// Command.Data as an encoded SyncData. Those packets still route.
+			GivenClient();
+			NetSync<int> property = SessionProperty(start: 1);
+
+			Receive(EncodeLegacyPropertyPacket(property.Id, 0, SyncType.Post, 42, from: HostId));
+
+			Assert.Equal(42, property.Value);
+		}
+
+		[Fact]
+		public void OutgoingPacketsUseTheFlattenedLayout()
+		{
+			GivenClient();
+			NetSync<int> property = SessionProperty();
+			Game.ClearTraffic();
+
+			property.Value = 42;
+
+			Command cmd = TheOnlyCommandSent();
+			Assert.NotNull(cmd.Property);
+			Assert.Null(cmd.Data);
+			Assert.Equal(42, StubSerializer.Deserialize<int>(cmd.Property.Data));
+		}
+
 		// -------------------------------------------------------------------
 		//  Routing failures
 		// -------------------------------------------------------------------
