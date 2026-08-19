@@ -9,6 +9,7 @@
 | [known-issues.md](known-issues.md) | Current bugs and sharp edges, each pinned by a test |
 | [performance.md](performance.md) | Hot paths, measurements, and the modding whitelist's limits |
 | [testing.md](testing.md) | How the stub harness works and how to run or extend the suite |
+| [../CHANGELOG.md](../CHANGELOG.md) | What changed in this release, and what to do about it |
 
 New here? Read [architecture.md](architecture.md), then whichever of
 [networkapi.md](networkapi.md) (messaging) or [netsync.md](netsync.md)

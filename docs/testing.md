@@ -195,12 +195,25 @@ deduplicated, either half of fetch batching being undone, the transfer
 direction check being skipped, the sync distance flag being ignored, and
 declaration-order addressing being broken — each on its own.
 
+## In game
+
+Everything above runs against a stub. `TestFiles/` is a mod that runs inside
+Space Engineers and is the only thing that proves the engine behaves the way
+these tests assume — that `InvokeOnGameThread` fires when batching expects it,
+that a batch survives the reliable channel, that the game's protobuf handles the
+inline property layout, that the frame counter advances on a dedicated server.
+
+See [TestFiles/README.md](../TestFiles/README.md). It needs running in three
+configurations: single player, listen server with a client, and dedicated server
+with a client.
+
 ## Not covered
 
 * Keen's block compressor (GZip stands in for it).
 * Real network transport — ordering, loss, latency. Only the two engine rules
   above are modelled; delivery is otherwise instant and perfect.
 * Anything requiring a running session: whether a component is created on a
-  dedicated server, HUD rendering, actual Steam identities.
+  dedicated server, HUD rendering, actual Steam identities. That is what the in
+  game mod is for.
 * Thread safety. The suite is single-threaded; see
   [known-issues.md](known-issues.md#lock-_value-does-not-synchronise-anything).
