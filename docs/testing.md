@@ -4,7 +4,7 @@
 dotnet test tests/SENetworkAPI.Tests
 ```
 
-272 tests, no game install required, about a second to run.
+287 tests, no game install required, about a second to run.
 
 If you have the game installed, there is a second check that needs no test
 runner — it compiles the shipped sources against the real assemblies:
@@ -153,13 +153,20 @@ and deliver those bytes — see `IntegrationTests`.
 ## Are the tests any good?
 
 Passing tests only prove the code runs. To check they actually constrain it, the
-suite was mutation tested: 28 deliberate breakages were introduced one at a time
+suite is mutation tested: 40 deliberate breakages, introduced one at a time
 across every path — deduplication, batch grouping, the reliability upgrade, the
 compression rules, the player snapshot, entity cleanup, chat parsing, the relay,
-timestamps, sync distance — and the suite was run against each.
+timestamps, sync distance, the exception guards, and the lazy encode — with the
+suite run against each.
 
-All 28 were caught. If you add behaviour here, do the same to whatever you write
-to cover it: break the code on purpose and make sure the test notices.
+All 40 are caught. Four of them were not, first time round, and each pointed at
+a real gap: a test that asserted "no exception" without checking the branch it
+meant to cover, and three performance behaviours that produce identical output
+either way. The fake counts serialization calls (`Game.Utilities.SerializeCallCount`)
+so tests can assert that work was *skipped*, not merely that the result matched.
+
+If you add behaviour here, do the same to whatever you write to cover it: break
+the code on purpose and make sure the test notices.
 
 ## Not covered
 

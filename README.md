@@ -10,14 +10,6 @@ It gives you two things:
 
 Drop the `.cs` files into your mod, pick a communication channel, and go.
 
-📚 **[Full documentation](docs/README.md)** · 🧪 `dotnet test tests/SENetworkAPI.Tests`
-
-> **Two things to know before you build on this.** The steam id you are handed
-> as "the sender" is not verified by the game — a modified client can put any id
-> there, so never gate permissions on it. And `isReliable: false` silently drops
-> anything over 1024 bytes. Details in
-> [known-issues.md](docs/known-issues.md).
-
 ## Syncing a variable
 
 ```csharp
@@ -125,9 +117,9 @@ never `null`, which is reserved for chat relays and cannot be registered.
 On the server the instance can be cast for the server-only sends:
 
 ```csharp
-if (NetworkAPI.Instance is Server)
+if (Network.NetworkType != NetworkTypes.Client)
 {
-    Server s = (Server)NetworkAPI.Instance;
+    Server s = (Server)Network;
 
     s.SendCommandTo(new[] { id1, id2 }, "update");
     s.SendCommand("update", location, radius);   // everyone within radius

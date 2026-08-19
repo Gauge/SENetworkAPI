@@ -38,9 +38,10 @@ A listen server (a player hosting) and a dedicated server both get `Server`;
 they differ only in whether `MyAPIGateway.Utilities.IsDedicated` is set and
 whether `MyAPIGateway.Session.Player` exists.
 
-> The `NetworkTypes { Dedicated, Server, Client }` enum in `Network.cs` is
-> declared but never used, and there is no `NetworkType` property. To branch on
-> role use `NetworkAPI.Instance is Server` or `MyAPIGateway.Multiplayer.IsServer`.
+> To branch on role, use `NetworkAPI.Instance.NetworkType`, which returns
+> `Client`, `Server` or `Dedicated`. `NetworkAPI.Instance is Server` and
+> `MyAPIGateway.Multiplayer.IsServer` work too and do not distinguish a
+> dedicated server from a listen server.
 
 ## Packet flow
 

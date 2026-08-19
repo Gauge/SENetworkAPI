@@ -75,6 +75,16 @@ namespace SEStubs
 		/// <summary>When set and it returns true for the requested type, deserialization throws.</summary>
 		public Predicate<Type> FailDeserializeFor;
 
+		/// <summary>When set and it returns true for the requested type, deserialization returns null.</summary>
+		public Predicate<Type> ReturnNullFor;
+
+		/// <summary>
+		/// How many times anything has been serialized. Serialization is the
+		/// most expensive thing the API does, so tests assert on this to prove
+		/// work is being skipped rather than merely producing the same output.
+		/// </summary>
+		public int SerializeCallCount;
+
 		/// <summary>Work scheduled for the next update, drained by FakeGame.NextFrame.</summary>
 		public readonly List<Action> Scheduled = new List<Action>();
 
@@ -88,13 +98,22 @@ namespace SEStubs
 			ShownMessages.Add(new ShownMessage { Sender = sender, Text = messageText });
 		}
 
-		public byte[] SerializeToBinary<T>(T obj) => StubSerializer.Serialize(obj);
+		public byte[] SerializeToBinary<T>(T obj)
+		{
+			SerializeCallCount++;
+			return StubSerializer.Serialize(obj);
+		}
 
 		public T SerializeFromBinary<T>(byte[] data)
 		{
 			if (FailDeserializeFor != null && FailDeserializeFor(typeof(T)))
 			{
 				throw new InvalidOperationException($"Injected deserialization failure for {typeof(T).Name}");
+			}
+
+			if (ReturnNullFor != null && ReturnNullFor(typeof(T)))
+			{
+				return default(T);
 			}
 
 			return StubSerializer.Deserialize<T>(data);
@@ -411,6 +430,7 @@ namespace SEStubs
 		{
 			Multiplayer.Sent.Clear();
 			Multiplayer.Dropped.Clear();
+			Utilities.SerializeCallCount = 0;
 			Utilities.ShownMessages.Clear();
 			MyLog.Default.Clear();
 		}

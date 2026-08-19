@@ -31,6 +31,7 @@ the code as it was prior to the optimisation work.
 | server receives + relays a property | 1784 | **1040** | 1541 | **1415** |
 | receive command packet | 312 | **296** | 777 | **715** |
 | 8 properties on a block, one frame | 8192 | **4359** | 3462 | **1954** |
+| entity property assign, nobody in range | 904 | **504** | 376 | **218** |
 
 The last row needs `Coalesce()`; everything else is automatic.
 
@@ -51,6 +52,9 @@ What changed, and why:
 * **Player snapshot.** The range query used to walk the engine's player list and
   call `GetPosition()` per player, per property, per frame. It is snapshotted
   once per frame into parallel arrays, after which the range test is arithmetic.
+* **Nothing is encoded for an empty recipient list.** A distance-limited
+  property used to serialize its packet and then discover nobody was near
+  enough to receive it. On a large world that is most blocks most of the time.
 * **Relay.** A server re-broadcasting a value reuses the bytes it was handed.
 * **Range filters.** Cached delegates instead of a closure allocated per send.
 * **Receive.** No `Split()` to read the first word of a command, one `DateTime`

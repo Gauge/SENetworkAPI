@@ -510,6 +510,51 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
+		public void RadiusSend_WithNobodyInRange_EncodesNothing()
+		{
+			// Serializing is the most expensive thing a send does, and a
+			// distance-limited block usually has nobody near it.
+			Server server = GivenServer();
+			MoveHostOutOfRange();
+			Game.Players.Add(201, new Vector3D(9999, 0, 0));
+			Game.ClearTraffic();
+
+			server.SendCommand("boom", Vector3D.Zero, 10);
+
+			Assert.Empty(Game.Sent);
+			Assert.Equal(0, Game.Utilities.SerializeCallCount);
+		}
+
+		[Fact]
+		public void RadiusSend_WithSomeoneInRange_EncodesExactlyOnce()
+		{
+			Server server = GivenServer();
+			MoveHostOutOfRange();
+			Game.Players.Add(201, Vector3D.Zero);
+			Game.Players.Add(202, Vector3D.Zero);
+			Game.Players.Add(203, Vector3D.Zero);
+			Game.ClearTraffic();
+
+			server.SendCommand("boom", Vector3D.Zero, 1000);
+
+			Assert.Equal(3, Game.Sent.Count);
+			Assert.Equal(1, Game.Utilities.SerializeCallCount);
+		}
+
+		[Fact]
+		public void ATargetedRadiusSendToAnUnknownPlayerEncodesNothing()
+		{
+			Server server = GivenServer();
+			MoveHostOutOfRange();
+			Game.ClearTraffic();
+
+			server.SendCommand("boom", Vector3D.Zero, 1000, steamId: 999999);
+
+			Assert.Empty(Game.Sent);
+			Assert.Equal(0, Game.Utilities.SerializeCallCount);
+		}
+
+		[Fact]
 		public void RadiusSend_WithNobodyInRange_StillEchoesTheMessage()
 		{
 			// The packet is not built when there is no one to send it to, but
@@ -564,12 +609,14 @@ namespace SENetworkAPI.Tests
 			MoveHostOutOfRange();
 			Game.Players.Add(201, Vector3D.Zero);
 			Game.ClearTraffic();
-			Game.Session.SessionSettings = new MyObjectBuilder_SessionSettings { SyncDistance = 1000 };
 			Game.DestroySession();
 
-			server.SendCommand(new Command { CommandString = "boom" }, Vector3D.Zero, 1000);
+			// radius 0 means "use the session's sync distance", and there is no
+			// session to ask.
+			Exception thrown = Record.Exception(() => server.SendCommand(new Command { CommandString = "boom" }, Vector3D.Zero));
 
-			Assert.Single(Game.Sent);
+			Assert.Null(thrown);
+			Assert.Empty(Game.Sent);
 		}
 
 		[Fact]

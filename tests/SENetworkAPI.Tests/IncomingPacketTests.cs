@@ -309,15 +309,37 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
-		public void AnEmptyPacketIsIgnoredQuietly()
+		public void AnEmptyPacketDoesNothing()
 		{
 			// Another mod sharing the channel should not fill the log with
-			// stack traces.
-			GivenClient();
+			// stack traces. An empty payload decodes to a command with every
+			// field at its default, which reaches no handler.
+			NetworkAPI api = GivenClient();
+			bool anything = false;
+			api.OnCommandRecived += (s, c, d, t) => anything = true;
 
 			Exception thrown = Record.Exception(() => Receive(new byte[0]));
 
 			Assert.Null(thrown);
+			Assert.False(anything);
+			Assert.Empty(Game.ShownMessages);
+			Assert.False(LoggedError("Failure in message processing"));
+		}
+
+		[Fact]
+		public void APacketThatDecodesToNothingIsIgnoredQuietly()
+		{
+			// The game ships its own protobuf fork; if it ever hands back null
+			// rather than an empty command, that must not be a crash.
+			NetworkAPI api = GivenClient();
+			bool anything = false;
+			api.OnCommandRecived += (s, c, d, t) => anything = true;
+			Game.Utilities.ReturnNullFor = t => t == typeof(Command);
+
+			Exception thrown = Record.Exception(() => Receive(EncodeCommandPacket("ping")));
+
+			Assert.Null(thrown);
+			Assert.False(anything);
 			Assert.False(LoggedError("Failure in message processing"));
 		}
 

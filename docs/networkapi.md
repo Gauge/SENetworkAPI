@@ -29,6 +29,7 @@ static bool       IsInitialized;           // Instance != null
 static bool       LogNetworkTraffic;       // verbose logging into the SE log
 static int        CompressionThreshold;    // payloads over this are compressed (1024)
 const  int        UnreliableMessageLimit;  // the engine's unreliable ceiling (1024)
+NetworkTypes      NetworkType;             // Client, Server or Dedicated
 readonly ushort   ComId;
 readonly string   ModName;
 readonly string   Keyword;                 // null when chat commands are off

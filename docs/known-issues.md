@@ -185,13 +185,6 @@ fractional part.
 
 *Test: `TimingTests.GetDeltaMilliseconds_HasWholeMillisecondResolution`.*
 
-### The `NetworkTypes` enum is dead
-
-`enum NetworkTypes { Dedicated, Server, Client }` is declared and never used;
-there is no `NetworkType` property to compare it against (older README examples
-show one). Branch on `NetworkAPI.Instance is Server` or
-`MyAPIGateway.Multiplayer.IsServer` instead.
-
 ---
 
 ## Fixed
@@ -216,6 +209,13 @@ written against the old behaviour may contain workarounds that can now go.
 | Every assignment sent a packet, even one that changed nothing | Unchanged assignments send nothing and do not raise `ValueChanged`; `AlwaysSend()` restores the old behaviour |
 | Every property update was its own packet | `Coalesce()` batches a frame's changes into one |
 | The range query walked the player list and called `GetPosition` per property, per frame | Snapshotted once per frame |
+| `SendCommandTo` printed its message on the host once per recipient | Echoed once |
+| A corrupt `Timestamp` threw out of `DateTime` and cost the whole packet | Clamped |
+| A mod's `BeforeFetchRequestResponse` throwing abandoned the packet | Isolated like the other callbacks |
+| An exception in a coalesced flush escaped into the game's update queue | Contained per group |
+| `GetEntityById` returning something that is not a `MyEntity` threw | Treated as "not found" |
+| A positional send with `radius: 0` and no session threw | Sends nothing |
+| `NetworkTypes` was declared but had no property to compare against, though old examples used one | `NetworkAPI.NetworkType` exists |
 
 ---
 
