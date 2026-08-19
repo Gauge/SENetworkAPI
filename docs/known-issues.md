@@ -94,34 +94,6 @@ is dropped. Use `isReliable: true` (the default) for anything but tiny packets.
 
 ## Bugs
 
-### Assigning to a null-valued property throws
-
-`SetValue` does `lock (_value)` on the value it is about to replace. If that
-value is `null`, `Monitor.Enter` throws `ArgumentNullException`. This makes the
-most natural declaration of a string property blow up on first use:
-
-```csharp
-NetSync<string> name = new NetSync<string>(this, TransferType.Both);  // starts null
-name.Value = "hello";                                                 // throws
-```
-
-Workaround: always pass a non-null starting value. Related: a `null` value is
-never transmitted, so such a property cannot send its sync-on-load fetch either.
-
-*Tests: `NetSyncValueTests.SetValue_OnANullValuedProperty_Throws`,
-`NetSyncValueTests.ANullValuedProperty_CannotEvenFetch`.*
-
-### `lock (_value)` does not synchronise anything
-
-Even with a non-null value the lock is ineffective: for a value type `T` the
-expression boxes into a **new** object every call, so two threads never share a
-monitor. `oldval` is also read outside the lock.
-
-This matters more than it looks, because the engine refuses handler
-registration off the update thread —
-`"Modifying message handlers from another thread is not supported!"` — while
-saying nothing about sends. Treat `NetSync` as main-thread-only. **[engine-verified]**
-
 ### A push aimed at one player becomes a broadcast **[engine-verified]**
 
 The engine delivers a packet addressed to the local player straight back into
@@ -167,79 +139,21 @@ the server's relay through `Server.SendCommand` prints it again.
 
 *Test: `IncomingPacketTests.MessageOnlyPacket_OnAListenServer_IsShownTwice`.*
 
-### Closing an entity leaks, and can evict the wrong property
-
-`Entity_OnClose` runs `PropertyById.Remove(Id)` — but entity-scoped properties
-live in `PropertiesByEntity`, never in `PropertyById`. Two consequences:
-
-1. The entity and its property list stay in `PropertiesByEntity` for the rest of
-   the session: a leak that grows with grid churn.
-2. `Id` for an entity property is a small per-entity index (0, 1, 2 …), while
-   session property ids come from a counter that also starts at 1. Closing an
-   entity that owns two properties therefore removes whatever session property
-   holds id 1 — after which that property stops receiving updates.
-
-The `AddedToScene` subscription is likewise left behind if the entity is closed
-before it ever enters the scene.
-
-*Tests: `NetSyncConstructionTests.ClosingAnEntity_UnregistersTheMatchingPropertyId`,
-`NetSyncConstructionTests.ClosingAnEntity_CanEvictAnUnrelatedSessionProperty`.*
-
-### A callback that throws stops the rest of the packet
-
-`HandleIncomingPacket` wraps everything in one `try/catch`. If a mod callback
-throws, the exception is logged as `Failure in message processing` and the
-remaining work for that packet is abandoned. Keep callbacks defensive.
-
-*Test: `IncomingPacketTests.ThrowingCallback_IsContainedByTheReceiveHandler`.*
-
-### Command dispatch is case-sensitive, registration is not
-
-`RegisterNetworkCommand` lower-cases the key. The lookup in
-`HandleIncomingPacket` does not lower-case the incoming string. Sending
-`"Update"` silently reaches nobody.
-
-`UnregisterNetworkCommand` and `UnregisterChatCommand` also skip the
-lower-casing, so unregistering by the same mixed-case string you registered with
-does nothing.
-
-*Tests: `IncomingPacketTests.CommandPacket_LookupIsCaseSensitive_SoMixedCaseSendsNeverMatch`,
-`CommandRegistrationTests.UnregisterNetworkCommand_DoesNotLowercase_SoMixedCaseUnregisterIsANoOp`.*
-
-### Clients discard the `sent` timestamp
-
-`Client.SendCommand(commandString, ..., sent: someTime)` builds the command with
-that timestamp and then the internal sender overwrites it with
-`DateTime.UtcNow.Ticks`. The server's positional overload does the same. The
-non-positional server overload and `SendCommandTo` honour it.
-
-*Test: `ClientSendTests.SendCommand_IgnoresTheSuppliedTimestamp`.*
-
-### Operator precedence in the transfer direction guard
-
-```csharp
-if (syncType != SyncType.Fetch &&
-    (TransferType == TransferType.ServerToClient && !IsServer) ||
-    (TransferType == TransferType.ClientToServer && IsServer))
-```
-
-`&&` binds tighter than `||`, so the `syncType != Fetch` exemption applies only
-to the `ServerToClient` branch. A server cannot answer a fetch for a
-`ClientToServer` property. Harmless today — servers never originate a fetch, and
-that direction is client-authoritative anyway — but it is not what the
-formatting suggests.
-
-*Test: `NetSyncValueTests.AServerCannotAnswerAFetchForAClientToServerProperty`.*
-
-### Swapped labels in the verbose log
-
-`SetNetworkValue` logs `New value: {oldval} --- Old value: {_value}`. The values
-are the right way round, the labels are not. Only visible with
-`LogNetworkTraffic` on.
-
 ---
 
 ## Design constraints worth knowing
+
+### NetSync is not thread safe
+
+`NetSync` used to wrap its assignment in `lock (_value)`, which protected
+nothing — it boxed a fresh object on every assignment of a value type, and the
+getter was never locked — so it is gone. Nothing replaced it: the static
+registries are locked, individual values are not.
+
+The engine refuses handler registration off the update thread
+(`"Modifying message handlers from another thread is not supported!"`) while
+saying nothing about sends. Treat the whole API as main-thread-only.
+**[engine-verified]**
 
 ### Entity properties are addressed by declaration order
 
@@ -266,12 +180,6 @@ when called from anywhere but `MySandboxGame.Static.UpdateThread`. Since the
 `NetworkAPI` constructor registers the handler, `NetworkAPI.Init` inherits that
 constraint — do not call it from a background task.
 
-### A fetch request carries a redundant payload
-
-`SendValue(SyncType.Fetch)` serializes and ships the requester's current value,
-which the receiver ignores. For a large `T` this doubles the cost of the
-handshake.
-
 ### `GetDeltaMilliseconds` has whole-millisecond resolution
 
 The tick subtraction is integer division, so the `float` result never has a
@@ -285,6 +193,26 @@ fractional part.
 there is no `NetworkType` property to compare it against (older README examples
 show one). Branch on `NetworkAPI.Instance is Server` or
 `MyAPIGateway.Multiplayer.IsServer` instead.
+
+---
+
+## Fixed
+
+These were on this list and are not any more. They are recorded because mods
+written against the old behaviour may contain workarounds that can now go.
+
+| Was | Now |
+| --- | --- |
+| `new NetSync<string>(this, TransferType.Both)` threw `ArgumentNullException` on first assignment | Works. A null value still cannot be *transmitted*, but it can be assigned, and a fetch no longer needs one |
+| Sends of `"Update"` never reached a handler registered as `"update"` | Command lookup is case insensitive, and locale independent |
+| `UnregisterNetworkCommand("Update")` was a silent no-op after `RegisterNetworkCommand("Update")` | Unregister matches Register |
+| Closing an entity leaked it and its properties, and could evict a session property with a colliding id | The entity's entry is removed and its events unhooked; session properties are untouched |
+| Leaving a world kept every property from it alive for the rest of the process | `Dispose` clears the registries |
+| A mod callback that threw abandoned the rest of the packet, and a throwing chat command broke chat for every mod behind it | Callbacks run isolated; the failure is logged and everything else continues |
+| A server could not answer a fetch for a `ClientToServer` property | The direction check is bracketed the way it reads |
+| `sent` was discarded by the client and by positional server sends | Honoured; only commands without a timestamp get stamped |
+| A fetch shipped a copy of the value the receiver discarded | It sends the address only |
+| The verbose log labelled old and new values the wrong way round | Fixed |
 
 ---
 

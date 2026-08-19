@@ -50,9 +50,9 @@ public class ANewModBlock : MyGameLogicComponent
 }
 ```
 
-Give reference types a non-null starting value — `new NetSync<string>(this,
-TransferType.Both, string.Empty)` — a null default cannot be assigned to or
-synced. See [known-issues.md](docs/known-issues.md).
+A null value cannot be transmitted, so give reference types a starting value if
+they should sync before anything sets them — `new NetSync<string>(this,
+TransferType.Both, string.Empty)`.
 
 `NetSync` cannot see changes made *inside* a complex object, so push manually:
 

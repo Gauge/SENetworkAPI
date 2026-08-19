@@ -4,7 +4,7 @@
 dotnet test tests/SENetworkAPI.Tests
 ```
 
-202 tests, no game install required, about a second to run.
+216 tests, no game install required, about a second to run.
 
 If you have the game installed, there is a second check that needs no test
 runner — it compiles the shipped sources against the real assemblies:
@@ -37,6 +37,15 @@ production sources compile against it unmodified:
 | `MyEntity`, `MyCubeBlock`, `MyGameLogicComponent`, `MySessionComponentBase` | the objects a `NetSync` can attach to |
 | `MyCompression` | payload compression (GZip here) |
 | `MyLog.Default` | the game log, retained in memory so tests can assert on it |
+
+There is also an allocation and throughput harness:
+
+```bash
+dotnet run -c Release --project tests/Benchmarks
+```
+
+See [performance.md](performance.md) for what it measures and the current
+numbers.
 
 ## How faithful is it?
 

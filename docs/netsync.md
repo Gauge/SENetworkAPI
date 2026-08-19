@@ -34,7 +34,7 @@ Passing `null` (or a game logic component with no `Entity`) throws.
 | Parameter | Default | Effect |
 | --- | --- | --- |
 | `transferType` | — | Which direction updates are allowed to travel. See below. |
-| `startingValue` | `default(T)` | Local initial value. **Give reference types a non-null value** — see [null values](#null-values). |
+| `startingValue` | `default(T)` | Local initial value. A null reference type is fine to assign to and to fetch, but cannot be transmitted — see [null values](#null-values). |
 | `syncOnLoad` | `true` | Ask the server for the current value as soon as this side is ready. |
 | `limitToSyncDistance` | `true` | Entity properties only: send updates just to players near the entity. |
 
@@ -118,7 +118,8 @@ property.BeforeFetchRequestResponse += senderSteamId => { };
 
 * `ValueChanged` fires on **every** assignment — local or remote, and even when
   the new value equals the old one. It does *not* fire for `Push()`, which sends
-  without changing anything.
+  without changing anything. Nothing deduplicates, so if you assign on a timer,
+  compare first: `if (property.Value != computed) property.Value = computed;`.
 * `ValueChangedByNetwork` fires only for values arriving over the network, after
   `ValueChanged`. `senderSteamId` is 0 for updates originating on a dedicated
   server.
@@ -161,7 +162,7 @@ a late update — they only re-sync if something triggers a fetch or another pus
 | `SyncType.None` | only with `LogNetworkTraffic` |
 | The transfer type forbids this direction | only with `LogNetworkTraffic` |
 | `MyAPIGateway.Session.OnlineMode == OFFLINE` | only with `LogNetworkTraffic` |
-| `Value` is `null` | only with `LogNetworkTraffic` |
+| `Value` is `null` and the sync type carries a value | only with `LogNetworkTraffic` |
 
 In every case the local value is still updated and `ValueChanged` still fires;
 only the network send is skipped. Turn on `NetworkAPI.LogNetworkTraffic = true`
@@ -169,22 +170,26 @@ when a value is not arriving — the log names the property and the reason.
 
 ### Null values
 
-Two separate problems make a `null` value a trap:
+A `null` value is never transmitted — there is nothing to encode. Everything
+else works: you can assign to a property that is currently null, and a property
+sitting at null can still fetch, because a fetch carries no payload.
 
-1. `SetValue` locks on the current value. If it is `null` the assignment throws
-   `ArgumentNullException`, so `new NetSync<string>(this, TransferType.Both)`
-   followed by `property.Value = "x"` **throws**.
-2. A `null` value is never transmitted, so such a property cannot even send its
-   sync-on-load fetch.
-
-Always give reference-typed properties a non-null starting value:
+So a `NetSync<string>` left at its default will not *push* anything until it
+holds a value, but it will happily receive one. If you want it to have something
+to send from the start, give it one:
 
 ```csharp
 new NetSync<string>(this, TransferType.Both, string.Empty);
 ```
 
+(Assigning to a null-valued property used to throw `ArgumentNullException`.
+That is fixed.)
+
 ## Lifetime
 
-Closing an entity does not fully unregister its properties — see
-[known-issues.md](known-issues.md#closing-an-entity-leaks-and-can-evict-the-wrong-property).
-Both registries are cleared when the world unloads and the statics go away.
+Closing an entity removes its properties from the registry and unhooks its
+events. Unloading the world clears both registries, so nothing carries over into
+the next session.
+
+A handler on `ValueChanged` or `ValueChangedByNetwork` that throws is caught and
+logged; it will not stop the other handler or the rest of the packet.

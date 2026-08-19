@@ -7,6 +7,7 @@
 | [netsync.md](netsync.md) | `NetSync<T>`: declaring, addressing, sync/transfer types, events, pitfalls |
 | [protocol.md](protocol.md) | The `Command` and `SyncData` wire format, compression, timestamps |
 | [known-issues.md](known-issues.md) | Current bugs and sharp edges, each pinned by a test |
+| [performance.md](performance.md) | Hot paths, measurements, and the modding whitelist's limits |
 | [testing.md](testing.md) | How the stub harness works and how to run or extend the suite |
 
 New here? Read [architecture.md](architecture.md), then whichever of

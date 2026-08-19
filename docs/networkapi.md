@@ -58,15 +58,18 @@ private void OnUpdate(ulong steamId, string commandString, byte[] data, DateTime
 * `data` — the payload, already decompressed.
 * `sent` — the send timestamp.
 
-Two rules that bite:
+Two things to know:
 
 * **`RegisterNetworkCommand(null, cb)` throws.** `null` command strings are
   reserved for pure chat messages, and there is no way to register a handler for
   them. A packet whose `CommandString` is `null` never reaches a callback, even
   if it carries data.
-* **Dispatch is case-sensitive even though registration is not.** Registration
-  lower-cases the key; the lookup on receive does not lower-case the incoming
-  string. `SendCommand("Update")` will never reach a handler. Send lower-case.
+* **Names are case insensitive**, on registration, dispatch and unregistration
+  alike. Registering `"Update"` twice in different casing throws; sending
+  `"UPDATE"` reaches the handler registered as `"update"`.
+
+A callback that throws is caught and logged, and the rest of the packet is
+processed normally.
 
 For traffic-level visibility there is also an event that fires for every
 non-property packet carrying a command string, registered or not:
@@ -89,8 +92,9 @@ private void Chat_Help(string arguments) { ... }
 
 Parsing of `"<keyword> <command> <arguments...>"`:
 
-* Matching is case-insensitive, on whole space-delimited words. `/mymod` does
-  not trigger on `/mymodding`. A keyword containing a space can never match.
+* Matching is case-insensitive and ordinal (so it does not depend on the
+  player's locale), on whole space-delimited words. `/mymod` does not trigger on
+  `/mymodding`. A keyword containing a space can never match.
 * Any message starting with the keyword is swallowed from global chat
   (`sendToOthers = false`), including unrecognised ones.
 * `arguments` keeps its original casing and inner spacing; only the outer
@@ -100,6 +104,9 @@ Parsing of `"<keyword> <command> <arguments...>"`:
 * An unrecognised command prints `"Command not recognized."` — unless the
   instance is a dedicated server, which stays silent.
 * `null` passed as the command name registers the `""` command.
+
+A chat callback that throws is caught and logged rather than escaping into the
+game's `MessageEntered` event, which every other mod is also subscribed to.
 
 Chat commands run on the machine that typed them. To reach the server, send a
 network command from the chat callback:
@@ -171,9 +178,10 @@ s.SendCommand("boom", position);                    // everyone within sync dist
 ## Receiving
 
 `HandleIncomingPacket` is the single receive path and is wrapped in a
-`try/catch`. Anything that throws inside it — a malformed packet, another mod on
-the same channel, or **your own callback** — is swallowed and written to the log
-as `Failure in message processing`. Callbacks after the throwing one do not run.
+`try/catch`, so a malformed packet or another mod's traffic on the same channel
+is swallowed and written to the log as `Failure in message processing`. Your
+callbacks are additionally isolated from each other: one that throws is logged
+and the rest of the packet is processed anyway.
 
 For a non-property packet it, in order:
 
