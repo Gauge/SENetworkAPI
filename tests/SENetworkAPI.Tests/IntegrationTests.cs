@@ -141,20 +141,49 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
-		public void ALargePayload_SurvivesTheCompressionRoundTrip()
+		public void ACompressedPayloadSurvivesTheRoundTrip()
 		{
 			GivenServer();
-			byte[] payload = new byte[NetworkAPI.CompressionThreshold * 2];
-			new Random(1234).NextBytes(payload);
+
+			// Compressible, so the packet really is compressed - otherwise this
+			// would quietly stop exercising the compression path.
+			byte[] payload = new byte[NetworkAPI.CompressionThreshold * 8];
+			for (int i = 0; i < payload.Length; i++)
+			{
+				payload[i] = (byte)(i % 4);
+			}
+
 			NetworkAPI.Instance.SendCommand("bulk", data: payload);
-			byte[] wire = Assert.Single(Game.Sent).Data;
+			SentPacket packet = Assert.Single(Game.Sent);
+			Assert.True(StubSerializer.Deserialize<Command>(packet.Data).IsCompressed);
 
 			Restart();
 			NetworkAPI client = GivenClient();
 			byte[] received = null;
 			client.RegisterNetworkCommand("bulk", (s, c, d, t) => received = d);
 
-			Receive(wire);
+			Receive(packet.Data);
+
+			Assert.Equal(payload, received);
+		}
+
+		[Fact]
+		public void AnIncompressiblePayloadSurvivesTheRoundTripUncompressed()
+		{
+			GivenServer();
+			byte[] payload = new byte[NetworkAPI.CompressionThreshold * 2];
+			new Random(1234).NextBytes(payload);
+
+			NetworkAPI.Instance.SendCommand("bulk", data: payload);
+			SentPacket packet = Assert.Single(Game.Sent);
+			Assert.False(StubSerializer.Deserialize<Command>(packet.Data).IsCompressed);
+
+			Restart();
+			NetworkAPI client = GivenClient();
+			byte[] received = null;
+			client.RegisterNetworkCommand("bulk", (s, c, d, t) => received = d);
+
+			Receive(packet.Data);
 
 			Assert.Equal(payload, received);
 		}

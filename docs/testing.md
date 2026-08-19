@@ -4,7 +4,7 @@
 dotnet test tests/SENetworkAPI.Tests
 ```
 
-252 tests, no game install required, about a second to run.
+272 tests, no game install required, about a second to run.
 
 If you have the game installed, there is a second check that needs no test
 runner — it compiles the shipped sources against the real assemblies:
@@ -149,6 +149,17 @@ and deliver those bytes — see `IntegrationTests`.
 | `TimingTests` | `GetDeltaMilliseconds` / `GetDeltaFrames` |
 | `SenderIdentityTests` | the trust model: unverified sender ids, arrival-side checks |
 | `IntegrationTests` | full client↔server exchanges |
+
+## Are the tests any good?
+
+Passing tests only prove the code runs. To check they actually constrain it, the
+suite was mutation tested: 28 deliberate breakages were introduced one at a time
+across every path — deduplication, batch grouping, the reliability upgrade, the
+compression rules, the player snapshot, entity cleanup, chat parsing, the relay,
+timestamps, sync distance — and the suite was run against each.
+
+All 28 were caught. If you add behaviour here, do the same to whatever you write
+to cover it: break the code on purpose and make sure the test notices.
 
 ## Not covered
 

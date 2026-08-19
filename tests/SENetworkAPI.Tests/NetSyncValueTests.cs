@@ -16,6 +16,16 @@ namespace SENetworkAPI.Tests
 	{
 		private class TestSessionComponent : MySessionComponentBase { }
 
+		public enum Mode { Stopped, Running }
+
+		/// <summary>A struct that implements neither IEquatable nor IComparable.</summary>
+		[ProtoBuf.ProtoContract]
+		public struct Reading
+		{
+			[ProtoBuf.ProtoMember(1)]
+			public int Amount;
+		}
+
 		private NetSync<int> Property(TransferType transfer = TransferType.Both, int start = 0)
 			=> new NetSync<int>(new TestSessionComponent(), transfer, start, syncOnLoad: false);
 
@@ -145,6 +155,38 @@ namespace SENetworkAPI.Tests
 			property.Value = "hel" + "lo";
 
 			Assert.Empty(Game.Sent);
+		}
+
+		[Fact]
+		public void EnumsAreDeduplicated()
+		{
+			// An enum compares by value without boxing, so it qualifies.
+			GivenClient();
+			NetSync<Mode> property = new NetSync<Mode>(new TestSessionComponent(), TransferType.Both, Mode.Running, syncOnLoad: false);
+			Game.ClearTraffic();
+
+			property.Value = Mode.Running;
+
+			Assert.Empty(Game.Sent);
+
+			property.Value = Mode.Stopped;
+
+			Assert.Single(Game.Sent);
+		}
+
+		[Fact]
+		public void StructsWithoutValueEqualityAreAlwaysSent()
+		{
+			// Comparing one of these means boxing both sides and going through
+			// reflection, which costs more than the packet it would save. The
+			// policy is to send rather than pay that.
+			GivenClient();
+			NetSync<Reading> property = new NetSync<Reading>(new TestSessionComponent(), TransferType.Both, new Reading { Amount = 1 }, syncOnLoad: false);
+			Game.ClearTraffic();
+
+			property.Value = new Reading { Amount = 1 };
+
+			Assert.Single(Game.Sent);
 		}
 
 		[Fact]

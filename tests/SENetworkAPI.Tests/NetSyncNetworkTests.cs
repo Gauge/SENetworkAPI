@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using SEStubs;
 using VRage.Game.Components;
 using VRage.Game.Entity;
@@ -145,6 +146,44 @@ namespace SENetworkAPI.Tests
 			Assert.NotNull(cmd.Property);
 			Assert.Null(cmd.Data);
 			Assert.Equal(42, StubSerializer.Deserialize<int>(cmd.Property.Data));
+		}
+
+		[Fact]
+		public void ABadEntryInABatchDoesNotStopTheRest()
+		{
+			// Batches make one packet responsible for several properties, so a
+			// single unroutable entry must not take the others down with it.
+			GivenClient();
+			NetSync<int> first = SessionProperty();
+			NetSync<int> second = SessionProperty();
+
+			Command cmd = new Command {
+				IsProperty = true,
+				SteamId = HostId,
+				Timestamp = DateTime.UtcNow.Ticks,
+				Properties = new List<SyncData> {
+					new SyncData { Id = first.Id, SyncType = SyncType.Post, Data = StubSerializer.Serialize(11) },
+					new SyncData { Id = 9999, SyncType = SyncType.Post, Data = StubSerializer.Serialize(22) },
+					new SyncData { Id = second.Id, SyncType = SyncType.Post, Data = StubSerializer.Serialize(33) },
+				},
+			};
+
+			Receive(StubSerializer.Serialize(cmd));
+
+			Assert.Equal(11, first.Value);
+			Assert.Equal(33, second.Value);
+			Assert.True(LoggedInfo("id not registered in dictionary"));
+		}
+
+		[Fact]
+		public void AnEmptyBatchIsHarmless()
+		{
+			GivenClient();
+
+			Exception thrown = Record.Exception(() => Receive(StubSerializer.Serialize(
+				new Command { IsProperty = true, Properties = new List<SyncData>(), Timestamp = DateTime.UtcNow.Ticks })));
+
+			Assert.Null(thrown);
 		}
 
 		// -------------------------------------------------------------------

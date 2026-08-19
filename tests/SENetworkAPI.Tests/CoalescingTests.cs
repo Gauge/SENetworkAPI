@@ -75,23 +75,109 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
-		public void OnePacketPerEntity()
+		public void EachEntityGetsItsOwnPacket()
 		{
 			GivenClient();
 			MyEntity first = Game.CreateEntity();
 			MyEntity second = Game.CreateEntity();
-			Coalesced(first).Value = 1;
-			Coalesced(first).Value = 2;
-			Coalesced(second).Value = 3;
+			NetSync<int> a = Coalesced(first);
+			NetSync<int> b = Coalesced(first);
+			NetSync<int> c = Coalesced(second);
 			Game.ClearTraffic();
 
-			Coalesced(first).Value = 4;
-			Coalesced(second).Value = 5;
+			a.Value = 1;
+			b.Value = 2;
+			c.Value = 3;
 			Game.NextFrame();
 
-			// Different entities are at different places, so they cannot share
-			// a distance-limited packet.
+			// Two entities are in two places, so they cannot share a packet
+			// that is limited by distance from one of them.
 			Assert.Equal(2, Game.Sent.Count);
+			Assert.Equal(2, DecodeSyncDataList(Game.Sent[0]).Count);
+			Assert.Single(DecodeSyncDataList(Game.Sent[1]));
+		}
+
+		[Fact]
+		public void SessionAndEntityPropertiesDoNotShareAPacket()
+		{
+			GivenClient();
+			MyEntity entity = Game.CreateEntity();
+			NetSync<int> onEntity = Coalesced(entity);
+			NetSync<int> onSession = Coalesced();
+			Game.ClearTraffic();
+
+			onEntity.Value = 1;
+			onSession.Value = 2;
+			Game.NextFrame();
+
+			Assert.Equal(2, Game.Sent.Count);
+		}
+
+		[Fact]
+		public void DistanceLimitedAndUnlimitedPropertiesDoNotShareAPacket()
+		{
+			// One goes to everyone, the other only to players near the entity.
+			GivenClient();
+			MyEntity entity = Game.CreateEntity();
+			NetSync<int> limited = new NetSync<int>(entity, TransferType.Both, 0, syncOnLoad: false).Coalesce();
+			NetSync<int> unlimited = new NetSync<int>(entity, TransferType.Both, 0, syncOnLoad: false, limitToSyncDistance: false).Coalesce();
+			Game.ClearTraffic();
+
+			limited.Value = 1;
+			unlimited.Value = 2;
+			Game.NextFrame();
+
+			Assert.Equal(2, Game.Sent.Count);
+		}
+
+		[Fact]
+		public void APropertyStillAtNullIsLeftOutOfTheBatch()
+		{
+			GivenClient();
+			MyEntity entity = Game.CreateEntity();
+			NetSync<string> empty = new NetSync<string>(entity, TransferType.Both, syncOnLoad: false).Coalesce();
+			NetSync<string> filled = new NetSync<string>(entity, TransferType.Both, string.Empty, syncOnLoad: false).Coalesce();
+			Game.ClearTraffic();
+
+			empty.Value = null;
+			filled.Value = "here";
+			Game.NextFrame();
+
+			SyncData sync = TheOnlySyncDataSent();
+			Assert.Equal("here", StubSerializer.Deserialize<string>(sync.Data));
+		}
+
+		[Fact]
+		public void AFlushAfterTheEntityClosedIsHarmless()
+		{
+			GivenClient();
+			MyEntity entity = Game.CreateEntity();
+			NetSync<int> property = Coalesced(entity);
+			property.Value = 42;
+
+			entity.Close();
+			Exception thrown = Record.Exception(() => Game.NextFrame());
+
+			Assert.Null(thrown);
+		}
+
+		[Fact]
+		public void AlwaysSendStillBatches()
+		{
+			// The two switches are independent: AlwaysSend turns deduplication
+			// off, it does not turn batching off.
+			GivenClient();
+			MyEntity entity = Game.CreateEntity();
+			NetSync<int> a = Coalesced(entity).AlwaysSend();
+			NetSync<int> b = Coalesced(entity).AlwaysSend();
+			Game.ClearTraffic();
+
+			a.Value = 0;
+			b.Value = 0;
+			Game.NextFrame();
+
+			Assert.Single(Game.Sent);
+			Assert.Equal(2, DecodeSyncDataList(Game.Sent[0]).Count);
 		}
 
 		[Fact]
@@ -287,6 +373,21 @@ namespace SENetworkAPI.Tests
 			Exception thrown = Record.Exception(() => Game.NextFrame());
 
 			Assert.Null(thrown);
+		}
+
+		[Fact]
+		public void AFlushWithoutAnInitialisedApiIsHarmless()
+		{
+			// Queue while initialised, tear the API down, then let the frame end.
+			GivenClient();
+			NetSync<int> property = Coalesced();
+			property.Value = 42;
+			NetworkAPI.Instance = null;
+
+			Exception thrown = Record.Exception(() => Game.NextFrame());
+
+			Assert.Null(thrown);
+			Assert.Empty(Game.Sent);
 		}
 
 		[Fact]

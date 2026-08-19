@@ -141,6 +141,59 @@ namespace SENetworkAPI.Tests
 			Assert.Equal(payload, DecodeCommand(Game.Sent[0]).Data);
 		}
 
+		[Fact]
+		public void SendCommandTo_CompressesTheSharedPayloadOnce()
+		{
+			// The command object is reused across recipients, so compressing it
+			// a second time would produce a packet the receiver unwraps once.
+			Server server = GivenServer();
+			Game.ClearTraffic();
+			byte[] payload = new byte[NetworkAPI.CompressionThreshold * 4];
+
+			server.SendCommandTo(new ulong[] { 1, 2, 3 }, "bulk", data: payload);
+
+			Assert.Equal(3, Game.Sent.Count);
+			Assert.Equal(1, MyCompression.CompressCallCount);
+			Assert.All(AllCommandsSent(), c => Assert.Equal(payload, c.Data));
+		}
+
+		[Fact]
+		public void SendCommandTo_AddressesEachPacketToItsOwnRecipient()
+		{
+			Server server = GivenServer();
+			Game.ClearTraffic();
+
+			server.SendCommandTo(new ulong[] { 11, 22 }, "update");
+
+			Assert.Equal(new ulong[] { 11, 22 }, Game.Sent.Select(p => p.Recipient).ToArray());
+			Assert.Equal(new ulong[] { 11, 22 }, AllCommandsSent().Select(c => c.SteamId).ToArray());
+		}
+
+		[Fact]
+		public void SendCommandTo_WithNull_SendsNothing()
+		{
+			Server server = GivenServer();
+			Game.ClearTraffic();
+
+			Exception thrown = Record.Exception(() => server.SendCommandTo(null, "update"));
+
+			Assert.Null(thrown);
+			Assert.Empty(Game.Sent);
+		}
+
+		[Fact]
+		public void ChangingTheCompressionThresholdTakesEffect()
+		{
+			Server server = GivenServer();
+			NetworkAPI.CompressionThreshold = int.MaxValue;
+			Game.ClearTraffic();
+
+			server.SendCommand("bulk", data: new byte[8192]);
+
+			Assert.False(TheOnlyCommandSent().IsCompressed);
+			Assert.Equal(0, MyCompression.CompressCallCount);
+		}
+
 		// -------------------------------------------------------------------
 		//  Positional (radius) sends
 		// -------------------------------------------------------------------
@@ -442,6 +495,41 @@ namespace SENetworkAPI.Tests
 			server.SendCommand("boom", Vector3D.Zero, 10, steamId: 201);
 
 			Assert.Equal(201UL, Assert.Single(Game.Sent).Recipient);
+		}
+
+		[Fact]
+		public void RadiusSend_UpgradesAnOversizedUnreliablePacket()
+		{
+			// The positional path has its own send call and needs the same
+			// guard as the direct one.
+			Server server = GivenServer();
+			MoveHostOutOfRange();
+			Game.Players.Add(201, Vector3D.Zero);
+			Game.ClearTraffic();
+			byte[] incompressible = new byte[4096];
+			new Random(5).NextBytes(incompressible);
+
+			server.SendCommand("bulk", Vector3D.Zero, 1000, data: incompressible, isReliable: false);
+
+			SentPacket packet = Assert.Single(Game.Sent);
+			Assert.True(packet.Reliable);
+		}
+
+		[Fact]
+		public void RadiusSend_WorksWithoutASession()
+		{
+			// No session means no frame counter, so the snapshot cannot be
+			// cached; it must still send rather than throw.
+			Server server = GivenServer();
+			MoveHostOutOfRange();
+			Game.Players.Add(201, Vector3D.Zero);
+			Game.ClearTraffic();
+			Game.Session.SessionSettings = new MyObjectBuilder_SessionSettings { SyncDistance = 1000 };
+			Game.DestroySession();
+
+			server.SendCommand(new Command { CommandString = "boom" }, Vector3D.Zero, 1000);
+
+			Assert.Single(Game.Sent);
 		}
 
 		[Fact]

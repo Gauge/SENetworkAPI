@@ -125,13 +125,15 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
-		public void RegisterChatCommand_StoresTheCommandLowercased()
+		public void RegisterChatCommand_KeepsTheCallersSpellingAndMatchesAnyCasing()
 		{
 			NetworkAPI api = GivenServer("/test");
 
 			api.RegisterChatCommand("Help", _ => { });
 
+			Assert.True(api.ChatCommands.ContainsKey("Help"));
 			Assert.True(api.ChatCommands.ContainsKey("help"));
+			Assert.True(api.ChatCommands.ContainsKey("HELP"));
 		}
 
 		[Fact]

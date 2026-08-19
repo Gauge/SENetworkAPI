@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using SEStubs;
 using Xunit;
 
@@ -45,6 +47,57 @@ namespace SENetworkAPI.Tests
 			Assert.Equal(0UL, copy.SteamId);
 			Assert.False(copy.IsProperty);
 			Assert.False(copy.IsCompressed);
+		}
+
+		[Fact]
+		public void Command_RoundTripsAnInlineProperty()
+		{
+			Command original = new Command {
+				IsProperty = true,
+				SteamId = 7,
+				Property = new SyncData { Id = 3, EntityId = 99, SyncType = SyncType.Post, Data = new byte[] { 1, 2 } },
+			};
+
+			Command copy = StubSerializer.Deserialize<Command>(StubSerializer.Serialize(original));
+
+			Assert.NotNull(copy.Property);
+			Assert.Equal(3, copy.Property.Id);
+			Assert.Equal(99, copy.Property.EntityId);
+			Assert.Equal(SyncType.Post, copy.Property.SyncType);
+			Assert.Equal(new byte[] { 1, 2 }, copy.Property.Data);
+			Assert.Null(copy.Properties);
+		}
+
+		[Fact]
+		public void Command_RoundTripsABatchOfProperties()
+		{
+			Command original = new Command {
+				IsProperty = true,
+				Properties = new List<SyncData> {
+					new SyncData { Id = 1, SyncType = SyncType.Broadcast, Data = new byte[] { 1 } },
+					new SyncData { Id = 2, SyncType = SyncType.Broadcast, Data = new byte[] { 2 } },
+					new SyncData { Id = 3, SyncType = SyncType.Broadcast, Data = new byte[] { 3 } },
+				},
+			};
+
+			Command copy = StubSerializer.Deserialize<Command>(StubSerializer.Serialize(original));
+
+			Assert.Equal(3, copy.Properties.Count);
+			Assert.Equal(new long[] { 1, 2, 3 }, copy.Properties.Select(p => p.Id).ToArray());
+			Assert.Null(copy.Property);
+		}
+
+		[Fact]
+		public void AnInlinePropertyIsCheaperThanEncodingItSeparately()
+		{
+			// The reason the layout changed: nesting the message costs one
+			// encode pass, wrapping its bytes costs two.
+			SyncData update = new SyncData { Id = 1, SyncType = SyncType.Broadcast, Data = new byte[] { 1, 2, 3, 4 } };
+
+			int inline = StubSerializer.Serialize(new Command { IsProperty = true, Property = update }).Length;
+			int wrapped = StubSerializer.Serialize(new Command { IsProperty = true, Data = StubSerializer.Serialize(update) }).Length;
+
+			Assert.True(inline <= wrapped, $"inline {inline} bytes should not exceed wrapped {wrapped}");
 		}
 
 		[Fact]
