@@ -54,6 +54,7 @@ namespace SENetworkAPI
 				PropertiesByEntity.Clear();
 				PropertyById.Clear();
 				pending.Clear();
+				due.Clear();
 				flushScheduled = false;
 				generatorId = 1;
 			}
@@ -127,7 +128,11 @@ namespace SENetworkAPI
 		//  Coalescing
 		// ------------------------------------------------------------------
 
-		private static readonly List<NetSync> pending = new List<NetSync>();
+		// Double buffered: the flush swaps these rather than copying, so a
+		// property queued by a handler running inside the flush lands in the
+		// next frame's list instead of the one being walked.
+		private static List<NetSync> pending = new List<NetSync>();
+		private static List<NetSync> due = new List<NetSync>();
 		private static readonly List<SyncData> batch = new List<SyncData>();
 		private static bool flushScheduled;
 
@@ -164,8 +169,6 @@ namespace SENetworkAPI
 		/// </summary>
 		internal static void Flush()
 		{
-			List<NetSync> due;
-
 			lock (locker)
 			{
 				flushScheduled = false;
@@ -175,7 +178,9 @@ namespace SENetworkAPI
 					return;
 				}
 
-				due = new List<NetSync>(pending);
+				List<NetSync> swap = due;
+				due = pending;
+				pending = swap;
 				pending.Clear();
 			}
 
@@ -203,8 +208,19 @@ namespace SENetworkAPI
 					}
 				}
 
-				Send(first, batch);
+				// This runs from the game's update queue, so nothing may escape:
+				// one group that cannot be sent must not take the others with it.
+				try
+				{
+					Send(first, batch);
+				}
+				catch (Exception e)
+				{
+					MyLog.Default.Error($"[NetworkAPI] _ERROR_ Flush(): Problem sending a batched update: {e}");
+				}
 			}
+
+			due.Clear();
 		}
 
 		private static void Collect(NetSync property, List<SyncData> into)
@@ -294,7 +310,7 @@ namespace SENetworkAPI
 			}
 			else
 			{
-				MyEntity entity = (MyEntity)MyAPIGateway.Entities.GetEntityById(pack.EntityId);
+				MyEntity entity = MyAPIGateway.Entities.GetEntityById(pack.EntityId) as MyEntity;
 
 				if (entity == null)
 				{
@@ -321,7 +337,17 @@ namespace SENetworkAPI
 			property.LastMessageTimestamp = timestamp;
 			if (pack.SyncType == SyncType.Fetch)
 			{
-				property.BeforeFetchRequestResponse?.Invoke(sender);
+				// A mod hook that throws must not stop us answering the fetch,
+				// nor take out the other updates in a batched packet.
+				try
+				{
+					property.BeforeFetchRequestResponse?.Invoke(sender);
+				}
+				catch (Exception e)
+				{
+					MyLog.Default.Error($"[NetworkAPI] BeforeFetchRequestResponse handler threw:\n{e}");
+				}
+
 				property.Push(SyncType.Post, sender);
 			}
 			else

@@ -223,6 +223,59 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
+		public void AnEntityThatIsNotAMyEntity_IsIgnored()
+		{
+			// GetEntityById hands back an IMyEntity; a few of them are not
+			// MyEntity, and a hard cast would take down the whole packet.
+			GivenClient();
+			Game.Entities.AddForeign(4242);
+
+			Exception thrown = Record.Exception(() => Receive(EncodePropertyPacket(0, 4242, SyncType.Post, 1)));
+
+			Assert.Null(thrown);
+			Assert.True(LoggedInfo("Failed to get entity by id"));
+			Assert.False(LoggedError("Failure in message processing"));
+		}
+
+		[Fact]
+		public void AThrowingFetchHookStillAnswersTheFetch()
+		{
+			GivenServer();
+			NetSync<int> property = SessionProperty(start: 77);
+			property.BeforeFetchRequestResponse += id => { throw new InvalidOperationException("mod bug"); };
+			Game.ClearTraffic();
+
+			Receive(EncodePropertyPacket(property.Id, 0, SyncType.Fetch, from: ClientId));
+
+			Assert.Single(Game.Sent);
+			Assert.Equal(77, StubSerializer.Deserialize<int>(DecodeSyncData(Game.Sent[0]).Data));
+			Assert.True(LoggedError("BeforeFetchRequestResponse"));
+		}
+
+		[Fact]
+		public void AThrowingFetchHookInABatchDoesNotStopTheOtherUpdates()
+		{
+			GivenServer();
+			NetSync<int> broken = SessionProperty(start: 1);
+			NetSync<int> other = SessionProperty(start: 2);
+			broken.BeforeFetchRequestResponse += id => { throw new InvalidOperationException("mod bug"); };
+
+			Command cmd = new Command {
+				IsProperty = true,
+				SteamId = ClientId,
+				Timestamp = DateTime.UtcNow.Ticks,
+				Properties = new List<SyncData> {
+					new SyncData { Id = broken.Id, SyncType = SyncType.Fetch },
+					new SyncData { Id = other.Id, SyncType = SyncType.Post, Data = StubSerializer.Serialize(99) },
+				},
+			};
+
+			Receive(StubSerializer.Serialize(cmd));
+
+			Assert.Equal(99, other.Value);
+		}
+
+		[Fact]
 		public void AnEntityWithNoPropertiesOnIt_IsIgnored()
 		{
 			GivenClient();

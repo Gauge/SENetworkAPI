@@ -1,7 +1,6 @@
 ﻿using Sandbox.ModAPI;
 using System;
 using System.Collections.Generic;
-using VRage;
 using VRage.Game.ModAPI;
 using VRage.Utils;
 using VRageMath;
@@ -97,23 +96,23 @@ namespace SENetworkAPI
 		/// <param name="data">A serialized object to be sent across the network</param>
 		/// <param name="sent">The date timestamp this command was sent</param>
 		/// <param name="steamId">The client reciving this packet (if 0 it sends to all clients)</param>
-		/// <param name="isReliable">Enture delivery of the packet</param>
+		/// <param name="isReliable">Ensure delivery of the packet</param>
 		public override void SendCommand(string commandString, string message = null, byte[] data = null, DateTime? sent = null, ulong steamId = ulong.MinValue, bool isReliable = true)
 		{
 			SendCommand(new Command() { SteamId = steamId, CommandString = commandString, Message = message, Data = data, Timestamp = (sent == null) ? DateTime.UtcNow.Ticks : sent.Value.Ticks }, steamId, isReliable);
 		}
 
 		/// <summary>
-		/// 
+		/// Sends a command packet to every client within a radius of a point.
 		/// </summary>
-		/// <param name="commandString">Sends a command packet to the client(s)</param>
+		/// <param name="commandString">The command to be executed</param>
 		/// <param name="point">the center of the sync location</param>
 		/// <param name="radius">the distance the message reaches (defaults to sync distance)</param>
 		/// <param name="message">Text that will be displayed in client chat</param>
 		/// <param name="data">A serialized object to be sent across the network</param>
 		/// <param name="sent">The date timestamp this command was sent</param>
 		/// <param name="steamId">The client reciving this packet (if 0 it sends to all clients)</param>
-		/// <param name="isReliable">Enture delivery of the packet</param>
+		/// <param name="isReliable">Ensure delivery of the packet</param>
 		public override void SendCommand(string commandString, Vector3D point, double radius = 0, string message = null, byte[] data = null, DateTime? sent = null, ulong steamId = ulong.MinValue, bool isReliable = true)
 		{
 			SendCommand(new Command() { SteamId = steamId, CommandString = commandString, Message = message, Data = data, Timestamp = (sent == null) ? DateTime.UtcNow.Ticks : sent.Value.Ticks }, point, radius, steamId, isReliable);
@@ -122,12 +121,12 @@ namespace SENetworkAPI
 		/// <summary>
 		/// Sends a command packet to a list of clients
 		/// </summary>
-		/// <param name="steamIds"></param>
+		/// <param name="steamIds">The players to send to; each gets their own copy</param>
 		/// <param name="commandString">The command to be executed</param>
 		/// <param name="message">Text that will be displayed in client chat</param>
 		/// <param name="data">A serialized object to be sent across the network</param>
 		/// <param name="sent">The date timestamp this command was sent</param>
-		/// <param name="isReliable">Enture delivery of the packet</param>
+		/// <param name="isReliable">Ensure delivery of the packet</param>
 		public void SendCommandTo(ulong[] steamIds, string commandString, string message = null, byte[] data = null, DateTime? sent = null, bool isReliable = true)
 		{
 			if (steamIds == null || steamIds.Length == 0)
@@ -141,10 +140,21 @@ namespace SENetworkAPI
 			Command cmd = new Command() { CommandString = commandString, Message = message, Data = data, Timestamp = (sent == null) ? DateTime.UtcNow.Ticks : sent.Value.Ticks };
 			Compress(cmd);
 
+			// Echo once, here, rather than once per recipient: the per-packet
+			// send path would otherwise print the same line for every player.
+			ShowLocally(cmd.Message);
+
 			for (int i = 0; i < steamIds.Length; i++)
 			{
 				cmd.SteamId = steamIds[i];
-				SendCommand(cmd, steamIds[i], isReliable);
+				byte[] packet = Encode(cmd);
+
+				if (LogNetworkTraffic)
+				{
+					MyLog.Default.Info($"[NetworkAPI] TRANSMITTING Bytes: {packet.Length}  Command: {cmd.CommandString}  User: {steamIds[i]}");
+				}
+
+				Send(packet, steamIds[i], isReliable);
 			}
 		}
 
@@ -157,21 +167,11 @@ namespace SENetworkAPI
 		internal override void SendCommand(Command cmd, ulong steamId = ulong.MinValue, bool isReliable = true)
 		{
 			Compress(cmd);
-
-			if (!string.IsNullOrWhiteSpace(cmd.Message) && MyAPIGateway.Multiplayer.IsServer && MyAPIGateway.Session != null)
-			{
-				MyAPIGateway.Utilities.ShowMessage(ModName, cmd.Message);
-			}
+			ShowLocally(cmd.Message);
 
 			byte[] packet = MyAPIGateway.Utilities.SerializeToBinary(cmd);
 
-			// The engine silently drops unreliable messages over its size limit
-			// and reports the failure through a return value nobody reads. Send
-			// those reliably instead of losing them.
-			if (!isReliable && packet.Length > UnreliableMessageLimit)
-			{
-				isReliable = true;
-			}
+			isReliable = ResolveReliability(packet, isReliable);
 
 			if (LogNetworkTraffic)
 			{
@@ -202,8 +202,13 @@ namespace SENetworkAPI
 
 			if (radius == 0)
 			{
-				radius = MyAPIGateway.Session.SessionSettings.SyncDistance;
+				// No session means no sync distance to fall back on; sending
+				// nothing beats a null reference in the middle of a send.
+				IMySession session = MyAPIGateway.Session;
+				radius = (session != null) ? session.SessionSettings.SyncDistance : 0;
 			}
+
+			ShowLocally(cmd.Message);
 
 			if (steamId != ulong.MinValue)
 			{
@@ -213,7 +218,7 @@ namespace SENetworkAPI
 				m_filterWanted = steamId;
 				MyAPIGateway.Players.GetPlayers(recipients, m_singleRecipientFilter);
 
-				byte[] addressed = Encode(cmd);
+				byte[] addressed = (recipients.Count > 0) ? Encode(cmd) : null;
 
 				for (int i = 0; i < recipients.Count; i++)
 				{
@@ -222,7 +227,7 @@ namespace SENetworkAPI
 
 				if (LogNetworkTraffic)
 				{
-					MyLog.Default.Info($"[NetworkAPI] _TRANSMITTING_ Bytes: {addressed.Length}  Command: {cmd.CommandString}  To: {recipients.Count} Users");
+					MyLog.Default.Info($"[NetworkAPI] _TRANSMITTING_ Bytes: {addressed?.Length ?? 0}  Command: {cmd.CommandString}  To: {recipients.Count} Users");
 				}
 
 				return;
@@ -230,7 +235,6 @@ namespace SENetworkAPI
 
 			RefreshSnapshot();
 
-			byte[] packet = Encode(cmd);
 			double radiusSquared = radius * radius;
 			ulong sender = cmd.SteamId;
 			double px = point.X, py = point.Y, pz = point.Z;
@@ -238,6 +242,11 @@ namespace SENetworkAPI
 			ulong[] ids = m_snapshotIds;
 			int count = m_snapshotCount;
 			int sent = 0;
+
+			// Encoded on first use. A block that limits itself to sync distance
+			// usually has nobody near it, and serializing a packet for an empty
+			// recipient list is the most expensive thing this method can do.
+			byte[] packet = null;
 
 			for (int i = 0; i < count; i++)
 			{
@@ -258,24 +267,36 @@ namespace SENetworkAPI
 					continue;
 				}
 
+				if (packet == null)
+				{
+					packet = Encode(cmd);
+				}
+
 				sent++;
 				Send(packet, recipient, isReliable);
 			}
 
 			if (LogNetworkTraffic)
 			{
-				MyLog.Default.Info($"[NetworkAPI] _TRANSMITTING_ Bytes: {packet.Length}  Command: {cmd.CommandString}  To: {sent} Users within {radius}m");
+				MyLog.Default.Info($"[NetworkAPI] _TRANSMITTING_ Bytes: {packet?.Length ?? 0}  Command: {cmd.CommandString}  To: {sent} Users within {radius}m");
 			}
 		}
 
-		/// <summary>Shows the message locally, stamps the command and encodes it.</summary>
-		private byte[] Encode(Command cmd)
+		/// <summary>
+		/// Prints a command's message in the host's own chat. The server has to
+		/// do this itself: it is not a recipient of its own broadcast.
+		/// </summary>
+		private void ShowLocally(string message)
 		{
-			if (!string.IsNullOrWhiteSpace(cmd.Message) && MyAPIGateway.Multiplayer.IsServer && MyAPIGateway.Session != null)
+			if (!string.IsNullOrWhiteSpace(message) && MyAPIGateway.Multiplayer.IsServer && MyAPIGateway.Session != null)
 			{
-				MyAPIGateway.Utilities.ShowMessage(ModName, cmd.Message);
+				MyAPIGateway.Utilities.ShowMessage(ModName, message);
 			}
+		}
 
+		/// <summary>Stamps the command if it needs it and encodes it.</summary>
+		private static byte[] Encode(Command cmd)
+		{
 			if (cmd.Timestamp == 0)
 			{
 				cmd.Timestamp = DateTime.UtcNow.Ticks;
@@ -286,14 +307,12 @@ namespace SENetworkAPI
 
 		private void Send(byte[] packet, ulong steamId, bool isReliable)
 		{
-			if (!isReliable && packet.Length > UnreliableMessageLimit)
-			{
-				isReliable = true;
-			}
-
-			MyAPIGateway.Multiplayer.SendMessageTo(ComId, packet, steamId, isReliable);
+			MyAPIGateway.Multiplayer.SendMessageTo(ComId, packet, steamId, ResolveReliability(packet, isReliable));
 		}
 
+		/// <summary>
+		/// Broadcasts a line of chat to every client, and shows it on the host.
+		/// </summary>
 		public override void Say(string message)
 		{
 			SendCommand(null, message);

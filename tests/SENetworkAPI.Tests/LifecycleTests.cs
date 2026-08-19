@@ -112,6 +112,18 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
+		public void NetworkType_ReportsClientServerOrDedicated()
+		{
+			Assert.Equal(NetworkTypes.Client, GivenClient().NetworkType);
+
+			Restart();
+			Assert.Equal(NetworkTypes.Server, GivenServer().NetworkType);
+
+			Restart();
+			Assert.Equal(NetworkTypes.Dedicated, GivenDedicatedServer().NetworkType);
+		}
+
+		[Fact]
 		public void Close_UnregistersMessageAndChatHandlers()
 		{
 			NetworkAPI api = GivenServer("/test");

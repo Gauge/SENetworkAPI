@@ -280,6 +280,48 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
+		public void ACorruptTimestampDoesNotCostUsThePacket()
+		{
+			// Timestamp is whatever the sender wrote, and DateTime's constructor
+			// throws outside its range.
+			NetworkAPI api = GivenClient();
+			bool invoked = false;
+			DateTime received = default(DateTime);
+			api.RegisterNetworkCommand("ping", (s, c, d, t) => { invoked = true; received = t; });
+
+			Receive(EncodeCommandPacket("ping", timestamp: long.MinValue));
+
+			Assert.True(invoked);
+			Assert.Equal(DateTime.MinValue, received);
+			Assert.False(LoggedError("Failure in message processing"));
+		}
+
+		[Fact]
+		public void AnAbsurdlyLargeTimestampIsClamped()
+		{
+			NetworkAPI api = GivenClient();
+			DateTime received = default(DateTime);
+			api.RegisterNetworkCommand("ping", (s, c, d, t) => received = t);
+
+			Receive(EncodeCommandPacket("ping", timestamp: long.MaxValue));
+
+			Assert.Equal(DateTime.MaxValue, received);
+		}
+
+		[Fact]
+		public void AnEmptyPacketIsIgnoredQuietly()
+		{
+			// Another mod sharing the channel should not fill the log with
+			// stack traces.
+			GivenClient();
+
+			Exception thrown = Record.Exception(() => Receive(new byte[0]));
+
+			Assert.Null(thrown);
+			Assert.False(LoggedError("Failure in message processing"));
+		}
+
+		[Fact]
 		public void PacketsOnAnotherComId_AreNotDelivered()
 		{
 			NetworkAPI api = GivenClient();

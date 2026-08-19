@@ -34,6 +34,7 @@ namespace SENetworkAPI.Benchmarks
 			Measure("session property assign (client)", SessionPropertyAssign);
 			Measure("entity property assign, 8 players in range", EntityPropertyAssignInRange);
 			Measure("entity property assign, 64 players, 8 in range", EntityPropertyAssignManyPlayers);
+			Measure("entity property assign, nobody in range", EntityPropertyAssignNobodyInRange);
 			Measure("8 properties on a block, same frame, 64 players", BlockOfPropertiesPerFrame);
 			Measure("  ... the same, coalesced", BlockOfPropertiesCoalesced);
 			Measure("property fetch (client -> server)", PropertyFetch);
@@ -232,6 +233,31 @@ namespace SENetworkAPI.Benchmarks
 				}
 
 				game.NextFrame();
+				Drain();
+			};
+		}
+
+		/// <summary>
+		/// The common case on a large world: a block syncing a property with no
+		/// player anywhere near it.
+		/// </summary>
+		private static Action EntityPropertyAssignNobodyInRange()
+		{
+			FakeGame game = Server(players: 16);
+			MyEntity entity = game.CreateEntity(Vector3D.Zero);
+
+			// Every player a long way from the block, so the range test rejects
+			// all of them and nothing needs encoding.
+			for (int p = 0; p < game.Players.AllPlayers.Count; p++)
+			{
+				((FakePlayer)game.Players.AllPlayers[p]).Position = new Vector3D((p + 1) * 100000, 0, 0);
+			}
+
+			NetSync<int> property = new NetSync<int>(entity, TransferType.Both, 0, syncOnLoad: false);
+			int i = 0;
+			return () =>
+			{
+				property.Value = i++;
 				Drain();
 			};
 		}

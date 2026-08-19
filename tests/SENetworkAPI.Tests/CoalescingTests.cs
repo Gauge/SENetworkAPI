@@ -391,6 +391,28 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
+		public void AGroupThatCannotBeSentDoesNotStopTheOthers()
+		{
+			// Flush runs from the game's update queue, so nothing may escape it.
+			GivenClient();
+			MyEntity broken = Game.CreateEntity();
+			MyEntity fine = Game.CreateEntity();
+			NetSync<int> a = Coalesced(broken);
+			NetSync<int> b = Coalesced(fine);
+			Game.ClearTraffic();
+
+			a.Value = 1;
+			b.Value = 2;
+			broken.PositionComp = null;   // the send for this group will throw
+
+			Exception thrown = Record.Exception(() => Game.NextFrame());
+
+			Assert.Null(thrown);
+			Assert.Single(Game.Sent);
+			Assert.True(LoggedError("Problem sending a batched update"));
+		}
+
+		[Fact]
 		public void CoalescingIsOffByDefault()
 		{
 			GivenClient();

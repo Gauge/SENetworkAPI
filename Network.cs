@@ -31,6 +31,16 @@ namespace SENetworkAPI
 		public const int UnreliableMessageLimit = 1024;
 
 		/// <summary>
+		/// The engine refuses an unreliable message over its size limit and
+		/// reports it through a return value nothing reads, so an oversized one
+		/// is sent reliably instead of disappearing.
+		/// </summary>
+		internal static bool ResolveReliability(byte[] packet, bool isReliable)
+		{
+			return isReliable || packet.Length > UnreliableMessageLimit;
+		}
+
+		/// <summary>
 		/// Compresses the payload when it is over the threshold, keeping the
 		/// result only if it actually came out smaller. Safe to call more than
 		/// once on the same command; only the first call can do anything.
@@ -65,6 +75,24 @@ namespace SENetworkAPI
 		public readonly string ModName;
 
 		internal bool UsingTextCommands => Keyword != null;
+
+		/// <summary>
+		/// Which side of the connection this instance is. A listen server and a
+		/// dedicated server are both <see cref="Server"/> instances and differ
+		/// only here.
+		/// </summary>
+		public NetworkTypes NetworkType
+		{
+			get
+			{
+				if (this is Client)
+				{
+					return NetworkTypes.Client;
+				}
+
+				return MyAPIGateway.Utilities.IsDedicated ? NetworkTypes.Dedicated : NetworkTypes.Server;
+			}
+		}
 
 		// Ordinal, case insensitive: lookups no longer have to lower-case the
 		// incoming string (an allocation on every packet), registration keeps the
@@ -111,7 +139,6 @@ namespace SENetworkAPI
 
 			sendToOthers = false;
 
-			string arguments = messageText.Substring(Keyword.Length).Trim(' ');
 			string command = SecondToken(messageText);
 
 			Action<string> callback;
@@ -126,7 +153,10 @@ namespace SENetworkAPI
 			}
 			else if (ChatCommands.TryGetValue(command, out callback))
 			{
-				Invoke(callback, command, arguments.Substring(command.Length).Trim(' '));
+				// Everything after the command word, cut straight out of the
+				// message: building the whole tail first and trimming the
+				// command off it costs a second string for nothing.
+				Invoke(callback, command, messageText.Substring(Keyword.Length + 1 + command.Length).Trim(' '));
 				return;
 			}
 
@@ -206,6 +236,18 @@ namespace SENetworkAPI
 			{
 				Command cmd = MyAPIGateway.Utilities.SerializeFromBinary<Command>(msg);
 
+				if (cmd == null)
+				{
+					// An empty packet, or another mod's traffic on our channel.
+					// Not worth an exception and a stack trace every time.
+					if (LogNetworkTraffic)
+					{
+						MyLog.Default.Info($"[NetworkAPI] Ignored an empty packet on ComId {ComId}");
+					}
+
+					return;
+				}
+
 				if (LogNetworkTraffic)
 				{
 					MyLog.Default.Info($"[NetworkAPI] ----- TRANSMISSION RECIEVED -----");
@@ -259,7 +301,7 @@ namespace SENetworkAPI
 
 					if (cmd.CommandString != null)
 					{
-						DateTime sent = new DateTime(cmd.Timestamp);
+						DateTime sent = ToDateTime(cmd.Timestamp);
 
 						Invoke(OnCommandRecived, cmd, sent, "OnCommandRecived");
 
@@ -287,6 +329,26 @@ namespace SENetworkAPI
 			{
 				MyLog.Default.Error($"[NetworkAPI] Failure in message processing:\n{e.ToString()}");
 			}
+		}
+
+		/// <summary>
+		/// Turns a wire timestamp into a DateTime. The value is whatever the
+		/// sender wrote, and DateTime's constructor throws outside its range, so
+		/// a corrupt or hostile packet would otherwise cost us the whole message.
+		/// </summary>
+		private static DateTime ToDateTime(long timestamp)
+		{
+			if (timestamp < 0)
+			{
+				return DateTime.MinValue;
+			}
+
+			if (timestamp > DateTime.MaxValue.Ticks)
+			{
+				return DateTime.MaxValue;
+			}
+
+			return new DateTime(timestamp);
 		}
 
 		/// <summary>
@@ -485,13 +547,13 @@ namespace SENetworkAPI
 		/// <summary>
 		/// Gets the diffrence between now and a given timestamp in frames (60 fps)
 		/// </summary>
-		/// <param name="date"></param>
+		/// <param name="timestamp">A DateTime.Ticks value</param>
 		/// <returns></returns>
-
-		private static double frames = 1000d / 60d;
 		public static int GetDeltaFrames(long timestamp)
 		{
-			return (int)Math.Ceiling(GetDeltaMilliseconds(timestamp) / frames);
+			return (int)Math.Ceiling(GetDeltaMilliseconds(timestamp) / MillisecondsPerFrame);
 		}
+
+		private const double MillisecondsPerFrame = 1000d / 60d;
 	}
 }

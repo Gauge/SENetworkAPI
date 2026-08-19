@@ -279,6 +279,20 @@ namespace SEStubs
 			return entity;
 		}
 
+		/// <summary>
+		/// Registers something that is an IMyEntity but not a MyEntity, which
+		/// the game does for a few entity kinds.
+		/// </summary>
+		public void AddForeign(long entityId)
+		{
+			Registered[entityId] = new ForeignEntity { EntityId = entityId };
+		}
+
+		private sealed class ForeignEntity : IMyEntity
+		{
+			public long EntityId { get; set; }
+		}
+
 		public void Remove(long entityId) => Registered.Remove(entityId);
 	}
 

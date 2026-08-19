@@ -1,6 +1,5 @@
 ﻿using Sandbox.ModAPI;
 using System;
-using VRage;
 using VRage.Game.ModAPI;
 using VRage.Utils;
 using VRageMath;
@@ -26,8 +25,8 @@ namespace SENetworkAPI
 		/// <param name="message">Text that will be displayed in client chat</param>
 		/// <param name="data">A serialized object to be sent across the network</param>
 		/// <param name="sent">The date timestamp this command was sent</param>
-		/// <param name="steamId">The client reciving this packet (if 0 it sends to all clients)</param>
-		/// <param name="isReliable">Enture delivery of the packet</param>
+		/// <param name="steamId">Ignored: a client can only send to the server</param>
+		/// <param name="isReliable">Ensure delivery of the packet</param>
 		public override void SendCommand(string commandString, string message = null, byte[] data = null, DateTime? sent = null, ulong steamId = ulong.MinValue, bool isReliable = true)
 		{
 			IMyPlayer player = MyAPIGateway.Session?.Player;
@@ -63,13 +62,7 @@ namespace SENetworkAPI
 
 			byte[] packet = MyAPIGateway.Utilities.SerializeToBinary(cmd);
 
-			// The engine silently drops unreliable messages over its size limit
-			// and reports the failure through a return value nobody reads. Send
-			// those reliably instead of losing them.
-			if (!isReliable && packet.Length > UnreliableMessageLimit)
-			{
-				isReliable = true;
-			}
+			isReliable = ResolveReliability(packet, isReliable);
 
 			if (LogNetworkTraffic)
 			{
@@ -83,13 +76,13 @@ namespace SENetworkAPI
 		/// Sends a command packet to the server
 		/// </summary>
 		/// <param name="commandString">The command to be executed</param>
-		/// <param name="point">Client side send to server this is not used</param>
-		/// <param name="radius">Client side send to server this is not used</param>
+		/// <param name="point">Ignored: a client can only send to the server</param>
+		/// <param name="radius">Ignored: a client can only send to the server</param>
 		/// <param name="message">Text that will be displayed in client chat</param>
 		/// <param name="data">A serialized object to be sent across the network</param>
 		/// <param name="sent">The date timestamp this command was sent</param>
-		/// <param name="steamId">The client reciving this packet (if 0 it sends to all clients)</param>
-		/// <param name="isReliable">Enture delivery of the packet</param>
+		/// <param name="steamId">Ignored: a client can only send to the server</param>
+		/// <param name="isReliable">Ensure delivery of the packet</param>
 		public override void SendCommand(string commandString, Vector3D point, double radius = 0, string message = null, byte[] data = null, DateTime? sent = null, ulong steamId = 0, bool isReliable = true)
 		{
 			SendCommand(commandString, message, data, sent, steamId, isReliable);
@@ -108,7 +101,11 @@ namespace SENetworkAPI
 			SendCommand(cmd, steamId, isReliable);
 		}
 
-		public override void Say(string message) 
+		/// <summary>
+		/// Sends a line of chat to the server, which relays it to everyone. It
+		/// is not shown locally until that relay arrives back.
+		/// </summary>
+		public override void Say(string message)
 		{
 			SendCommand(null, message);
 		}

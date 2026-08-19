@@ -170,6 +170,18 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
+		public void SendCommandTo_EchoesTheMessageOnceNotOncePerRecipient()
+		{
+			Server server = GivenServer();
+			Game.ClearTraffic();
+
+			server.SendCommandTo(new ulong[] { 1, 2, 3, 4, 5 }, "update", "server announcement");
+
+			Assert.Equal(5, Game.Sent.Count);
+			Assert.Single(Game.ShownMessages);
+		}
+
+		[Fact]
 		public void SendCommandTo_WithNull_SendsNothing()
 		{
 			Server server = GivenServer();
@@ -495,6 +507,34 @@ namespace SENetworkAPI.Tests
 			server.SendCommand("boom", Vector3D.Zero, 10, steamId: 201);
 
 			Assert.Equal(201UL, Assert.Single(Game.Sent).Recipient);
+		}
+
+		[Fact]
+		public void RadiusSend_WithNobodyInRange_StillEchoesTheMessage()
+		{
+			// The packet is not built when there is no one to send it to, but
+			// the host still sees what it announced.
+			Server server = GivenServer();
+			MoveHostOutOfRange();
+			Game.Players.Add(201, new Vector3D(9999, 0, 0));
+			Game.ClearTraffic();
+
+			server.SendCommand("boom", Vector3D.Zero, 10, message: "kaboom");
+
+			Assert.Empty(Game.Sent);
+			Assert.Single(Game.ShownMessages);
+		}
+
+		[Fact]
+		public void ATargetedRadiusSendToAnUnknownPlayerSendsNothing()
+		{
+			Server server = GivenServer();
+			MoveHostOutOfRange();
+			Game.ClearTraffic();
+
+			server.SendCommand("boom", Vector3D.Zero, 1000, steamId: 999999);
+
+			Assert.Empty(Game.Sent);
 		}
 
 		[Fact]
