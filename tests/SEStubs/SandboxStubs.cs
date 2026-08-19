@@ -51,6 +51,13 @@ namespace VRage.Game.ModAPI
 		MyObjectBuilder_SessionSettings SessionSettings { get; }
 		MyOnlineModeEnum OnlineMode { get; }
 		int GameplayFrameCounter { get; }
+
+		/// <summary>
+		/// The game's own "am I the server" flag. Note this is not the same
+		/// expression as IMyMultiplayer.IsServer: the session reports true when
+		/// there is no multiplayer object at all, the multiplayer layer does not.
+		/// </summary>
+		bool IsServer { get; }
 	}
 
 	public interface IMyPlayerCollection

@@ -124,6 +124,54 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
+		public void NetworkType_AgreesWithTheInstanceSoTheDocumentedCastIsSafe()
+		{
+			// The documented way to reach the server-only sends is:
+			//     if (Network.NetworkType != NetworkTypes.Client)
+			//         Server s = (Server)Network;
+			// so anything but Client has to actually be a Server.
+			foreach (Func<NetworkAPI> start in new Func<NetworkAPI>[] {
+				() => GivenClient(), () => GivenServer(), () => GivenDedicatedServer() })
+			{
+				Restart();
+				NetworkAPI api = start();
+
+				if (api.NetworkType != NetworkTypes.Client)
+				{
+					Assert.IsType<Server>(api);
+				}
+				else
+				{
+					Assert.IsType<Client>(api);
+				}
+			}
+		}
+
+		[Fact]
+		public void NetworkType_FollowsTheInstanceNotTheLiveSessionFlag()
+		{
+			// A client whose session later claims to be the server is still a
+			// Client object, and every send it makes goes to the server. If
+			// NetworkType read the live flag instead, a mod following the
+			// documented pattern would cast a Client to Server and throw.
+			NetworkAPI api = GivenClient();
+			Game.Session.IsServer = true;
+			Game.Multiplayer.IsServer = true;
+
+			Assert.Equal(NetworkTypes.Client, api.NetworkType);
+			Assert.IsType<Client>(NetworkAPI.Instance);
+		}
+
+		[Fact]
+		public void NetworkType_OnAServerWithNoSessionStillReportsAServer()
+		{
+			NetworkAPI api = GivenServer();
+			Game.DestroySession();
+
+			Assert.NotEqual(NetworkTypes.Client, api.NetworkType);
+		}
+
+		[Fact]
 		public void Close_UnregistersMessageAndChatHandlers()
 		{
 			NetworkAPI api = GivenServer("/test");

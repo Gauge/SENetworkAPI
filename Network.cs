@@ -85,7 +85,18 @@ namespace SENetworkAPI
 		{
 			get
 			{
-				if (this is Client)
+				// Deliberately the instance type, not a live IsServer check.
+				// Init picked Client or Server once, from the game state at the
+				// time, and every send path is that choice. Asking the session
+				// again could answer Server for an instance that is actually a
+				// Client, and the documented way to use this is:
+				//
+				//     if (Network.NetworkType != NetworkTypes.Client)
+				//         Server s = (Server)Network;
+				//
+				// which would then throw. Only the Dedicated/Server split needs
+				// the game, because both are Server instances.
+				if (!(this is Server))
 				{
 					return NetworkTypes.Client;
 				}

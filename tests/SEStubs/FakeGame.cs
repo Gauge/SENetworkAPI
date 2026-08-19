@@ -62,6 +62,8 @@ namespace SEStubs
 
 		/// <summary>Advanced by <see cref="FakeGame.NextFrame"/>.</summary>
 		public int GameplayFrameCounter { get; set; }
+
+		public bool IsServer { get; set; }
 	}
 
 	public sealed class FakeUtilities : IMyUtilities
@@ -354,6 +356,7 @@ namespace SEStubs
 		{
 			FakeGame game = new FakeGame();
 			game.Multiplayer.IsServer = true;
+			game.Session.IsServer = true;
 			game.Utilities.IsDedicated = false;
 			FakePlayer host = game.Players.Add(hostSteamId);
 			game.Session.Player = host;
@@ -367,6 +370,7 @@ namespace SEStubs
 		{
 			FakeGame game = new FakeGame();
 			game.Multiplayer.IsServer = true;
+			game.Session.IsServer = true;
 			game.Utilities.IsDedicated = true;
 			game.Session.Player = null;
 			game.Session.LocalHumanPlayer = null;
@@ -387,7 +391,11 @@ namespace SEStubs
 		}
 
 		/// <summary>Flips the instance between server and client roles mid-test.</summary>
-		public void BecomeServer(bool isServer) => Multiplayer.IsServer = isServer;
+		public void BecomeServer(bool isServer)
+		{
+			Multiplayer.IsServer = isServer;
+			Session.IsServer = isServer;
+		}
 
 		/// <summary>Simulates the session being torn down (MyAPIGateway.Session goes null).</summary>
 		public void DestroySession() => MyAPIGateway.Session = null;

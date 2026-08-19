@@ -29,11 +29,27 @@ static bool       IsInitialized;           // Instance != null
 static bool       LogNetworkTraffic;       // verbose logging into the SE log
 static int        CompressionThreshold;    // payloads over this are compressed (1024)
 const  int        UnreliableMessageLimit;  // the engine's unreliable ceiling (1024)
-NetworkTypes      NetworkType;             // Client, Server or Dedicated
+NetworkTypes      NetworkType;             // Client, Server or Dedicated (see below)
 readonly ushort   ComId;
 readonly string   ModName;
 readonly string   Keyword;                 // null when chat commands are off
 ```
+
+`NetworkType` reports which side this instance is, and is the safe way to reach
+the server-only sends:
+
+```csharp
+if (Network.NetworkType != NetworkTypes.Client)
+{
+    Server s = (Server)Network;
+}
+```
+
+It is derived from the instance, not from a live "am I the server" check, so it
+can never disagree with what the object actually is — a cast guarded this way
+cannot throw. Only the `Dedicated`/`Server` split asks the game, since both are
+`Server` instances. If you want the live game state instead, read
+`MyAPIGateway.Multiplayer.IsServer` directly.
 
 `Close()` and `Dispose()` are obsolete. `SessionTools`, a session component
 inside the API, calls `Dispose()` on world unload for you.
