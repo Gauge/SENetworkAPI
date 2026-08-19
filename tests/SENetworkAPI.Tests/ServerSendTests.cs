@@ -380,6 +380,71 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
+		public void RadiusSend_PicksUpPlayersWhoMovedOnALaterFrame()
+		{
+			Server server = GivenServer();
+			MoveHostOutOfRange();
+			FakePlayer player = Game.Players.Add(201, new Vector3D(9999, 0, 0));
+			server.SendCommand("boom", Vector3D.Zero, 1000);
+			Assert.Empty(Game.Sent);
+
+			player.Position = Vector3D.Zero;
+			Game.NextFrame();
+			server.SendCommand("boom", Vector3D.Zero, 1000);
+
+			Assert.Single(Game.Sent);
+		}
+
+		[Fact]
+		public void RadiusSend_ReusesThePlayerListWithinAFrame()
+		{
+			// The snapshot is the point: several property updates in one frame
+			// must not each re-walk the engine's player list.
+			Server server = GivenServer();
+			MoveHostOutOfRange();
+			FakePlayer player = Game.Players.Add(201, Vector3D.Zero);
+			server.SendCommand("boom", Vector3D.Zero, 1000);
+			Game.ClearTraffic();
+
+			// Moving out of range mid-frame is not observed until the next one.
+			player.Position = new Vector3D(9999, 0, 0);
+			server.SendCommand("boom", Vector3D.Zero, 1000);
+
+			Assert.Single(Game.Sent);
+		}
+
+		[Fact]
+		public void RadiusSend_SeesAPlayerWhoJoinedOnAnEarlierFrame()
+		{
+			Server server = GivenServer();
+			MoveHostOutOfRange();
+			server.SendCommand("boom", Vector3D.Zero, 1000);
+			Assert.Empty(Game.Sent);
+
+			Game.Players.Add(201, Vector3D.Zero);
+			Game.NextFrame();
+			server.SendCommand("boom", Vector3D.Zero, 1000);
+
+			Assert.Single(Game.Sent);
+		}
+
+		[Fact]
+		public void ATargetedSendSeesAPlayerWhoJoinedThisFrame()
+		{
+			// Addressed sends bypass the snapshot, so a player who joined since
+			// it was taken still receives the packet aimed at them.
+			Server server = GivenServer();
+			MoveHostOutOfRange();
+			server.SendCommand("boom", Vector3D.Zero, 1000);
+			Game.ClearTraffic();
+
+			Game.Players.Add(201, new Vector3D(1e9, 0, 0));
+			server.SendCommand("boom", Vector3D.Zero, 10, steamId: 201);
+
+			Assert.Equal(201UL, Assert.Single(Game.Sent).Recipient);
+		}
+
+		[Fact]
 		public void RadiusSend_UsesSquaredDistance_SoTheBoundaryIsExclusive()
 		{
 			Server server = GivenServer();

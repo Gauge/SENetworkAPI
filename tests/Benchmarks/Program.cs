@@ -34,6 +34,7 @@ namespace SENetworkAPI.Benchmarks
 			Measure("session property assign (client)", SessionPropertyAssign);
 			Measure("entity property assign, 8 players in range", EntityPropertyAssignInRange);
 			Measure("entity property assign, 64 players, 8 in range", EntityPropertyAssignManyPlayers);
+			Measure("8 properties on a block, same frame, 64 players", BlockOfPropertiesPerFrame);
 			Measure("property fetch (client -> server)", PropertyFetch);
 			Measure("server broadcast command, 32 byte payload", ServerBroadcast);
 			Measure("server receives + relays a property update", ServerReceiveAndRelay);
@@ -176,6 +177,36 @@ namespace SENetworkAPI.Benchmarks
 			return () =>
 			{
 				property.Value = i++;
+				Drain();
+			};
+		}
+
+		/// <summary>
+		/// What a block with several synced properties actually does: they all
+		/// change together in one frame, on a busy server.
+		/// </summary>
+		private static Action BlockOfPropertiesPerFrame()
+		{
+			FakeGame game = Server(players: 64, spread: 1000);
+			MyEntity entity = game.CreateEntity(Vector3D.Zero);
+			NetSync<int>[] properties = new NetSync<int>[8];
+
+			for (int i = 0; i < properties.Length; i++)
+			{
+				properties[i] = new NetSync<int>(entity, TransferType.Both, 0, syncOnLoad: false);
+			}
+
+			int tick = 0;
+			return () =>
+			{
+				tick++;
+				game.NextFrame();
+
+				for (int i = 0; i < properties.Length; i++)
+				{
+					properties[i].Value = tick + i;
+				}
+
 				Drain();
 			};
 		}

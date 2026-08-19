@@ -11,15 +11,25 @@ namespace SENetworkAPI
 	public class Server : NetworkAPI
 	{
 		// The positional send runs on every update of every property that limits
-		// itself to sync distance, so its range filters are cached delegates
-		// reading their parameters from fields rather than lambdas that capture
-		// them - a closure allocation per send otherwise. The fields are only
-		// read while GetPlayers is running, which cannot call back into a mod.
-		private readonly Func<IMyPlayer, bool> m_inRangeFilter;
+		// itself to sync distance. Asking the engine for the player list each
+		// time meant walking its player dictionary and calling GetPosition on
+		// every player, per property, per frame - fifty properties on a hundred
+		// player server is five thousand position lookups a frame for an answer
+		// that does not change within the frame. The list is snapshotted once
+		// per frame instead, after which the range test is pure arithmetic over
+		// a struct list: no interface calls, and nothing for the GC to scan.
+		// Parallel arrays rather than a list of structs: the range test reads
+		// only the position for the players it rejects, and never copies a
+		// wider struct than it needs.
+		private Vector3D[] m_snapshotPositions = new Vector3D[16];
+		private ulong[] m_snapshotIds = new ulong[16];
+		private int m_snapshotCount;
+		private readonly List<IMyPlayer> m_snapshotSource = new List<IMyPlayer>();
+		private int m_snapshotFrame = int.MinValue;
+
+		// Still needed for a send addressed at one player, which does not use
+		// the snapshot: a player who joined this frame must not be missed.
 		private readonly Func<IMyPlayer, bool> m_singleRecipientFilter;
-		private Vector3D m_filterPoint;
-		private double m_filterRadiusSquared;
-		private ulong m_filterExcluded;
 		private ulong m_filterWanted;
 
 
@@ -30,21 +40,53 @@ namespace SENetworkAPI
 		/// <param name="keyword">identifies what chat entries should be captured and sent to the server</param>
 		public Server(ushort comId, string modName, string keyword = null) : base(comId, modName, keyword)
 		{
-			m_inRangeFilter = IsInRange;
 			m_singleRecipientFilter = IsWantedRecipient;
-		}
-
-		private bool IsInRange(IMyPlayer player)
-		{
-			// Distance first: it rejects most players with a single interface
-			// call, where testing the steam id first costs an extra call for
-			// every player that is out of range anyway.
-			return (player.GetPosition() - m_filterPoint).LengthSquared() < m_filterRadiusSquared && player.SteamUserId != m_filterExcluded;
 		}
 
 		private bool IsWantedRecipient(IMyPlayer player)
 		{
 			return player.SteamUserId == m_filterWanted;
+		}
+
+		/// <summary>
+		/// Rebuilds the player snapshot if it was taken on an earlier frame.
+		/// Being a frame out of date only means a player who joined this frame
+		/// waits one more before their first update.
+		/// </summary>
+		private void RefreshSnapshot()
+		{
+			IMySession session = MyAPIGateway.Session;
+			int frame = (session != null) ? session.GameplayFrameCounter : int.MinValue;
+
+			if (frame == m_snapshotFrame && frame != int.MinValue)
+			{
+				return;
+			}
+
+			m_snapshotFrame = frame;
+			m_snapshotSource.Clear();
+
+			MyAPIGateway.Players.GetPlayers(m_snapshotSource);
+
+			int count = m_snapshotSource.Count;
+
+			if (count > m_snapshotPositions.Length)
+			{
+				m_snapshotPositions = new Vector3D[count];
+				m_snapshotIds = new ulong[count];
+			}
+
+			for (int i = 0; i < count; i++)
+			{
+				IMyPlayer player = m_snapshotSource[i];
+				m_snapshotPositions[i] = player.GetPosition();
+				m_snapshotIds[i] = player.SteamUserId;
+			}
+
+			m_snapshotCount = count;
+
+			// Do not hold the players alive until the next frame.
+			m_snapshotSource.Clear();
 		}
 
 		/// <summary>
@@ -163,59 +205,93 @@ namespace SENetworkAPI
 				radius = MyAPIGateway.Session.SessionSettings.SyncDistance;
 			}
 
-			List<IMyPlayer> players = new List<IMyPlayer>();
-
-			if (steamId == ulong.MinValue)
+			if (steamId != ulong.MinValue)
 			{
-				m_filterPoint = point;
-				m_filterRadiusSquared = radius * radius;
-				m_filterExcluded = cmd.SteamId;
-				MyAPIGateway.Players.GetPlayers(players, m_inRangeFilter);
-			}
-			else
-			{
+				// Addressed at one player: ask the engine directly rather than
+				// trusting a snapshot that may predate them joining.
+				List<IMyPlayer> recipients = new List<IMyPlayer>();
 				m_filterWanted = steamId;
-				MyAPIGateway.Players.GetPlayers(players, m_singleRecipientFilter);
+				MyAPIGateway.Players.GetPlayers(recipients, m_singleRecipientFilter);
+
+				byte[] addressed = Encode(cmd);
+
+				for (int i = 0; i < recipients.Count; i++)
+				{
+					Send(addressed, recipients[i].SteamUserId, isReliable);
+				}
+
+				if (LogNetworkTraffic)
+				{
+					MyLog.Default.Info($"[NetworkAPI] _TRANSMITTING_ Bytes: {addressed.Length}  Command: {cmd.CommandString}  To: {recipients.Count} Users");
+				}
+
+				return;
 			}
 
-			Transmit(cmd, players, radius, isReliable);
+			RefreshSnapshot();
+
+			byte[] packet = Encode(cmd);
+			double radiusSquared = radius * radius;
+			ulong sender = cmd.SteamId;
+			double px = point.X, py = point.Y, pz = point.Z;
+			Vector3D[] positions = m_snapshotPositions;
+			ulong[] ids = m_snapshotIds;
+			int count = m_snapshotCount;
+			int sent = 0;
+
+			for (int i = 0; i < count; i++)
+			{
+				Vector3D position = positions[i];
+				double dx = position.X - px;
+				double dy = position.Y - py;
+				double dz = position.Z - pz;
+
+				if ((dx * dx) + (dy * dy) + (dz * dz) >= radiusSquared)
+				{
+					continue;
+				}
+
+				ulong recipient = ids[i];
+
+				if (recipient == sender)
+				{
+					continue;
+				}
+
+				sent++;
+				Send(packet, recipient, isReliable);
+			}
+
+			if (LogNetworkTraffic)
+			{
+				MyLog.Default.Info($"[NetworkAPI] _TRANSMITTING_ Bytes: {packet.Length}  Command: {cmd.CommandString}  To: {sent} Users within {radius}m");
+			}
 		}
 
-		/// <summary>
-		/// Serializes the command once and hands a copy to each recipient.
-		/// </summary>
-		private void Transmit(Command cmd, List<IMyPlayer> players, double radius, bool isReliable)
+		/// <summary>Shows the message locally, stamps the command and encodes it.</summary>
+		private byte[] Encode(Command cmd)
 		{
 			if (!string.IsNullOrWhiteSpace(cmd.Message) && MyAPIGateway.Multiplayer.IsServer && MyAPIGateway.Session != null)
 			{
 				MyAPIGateway.Utilities.ShowMessage(ModName, cmd.Message);
 			}
 
-			// Only stamp commands that do not carry one already; see Client.cs.
 			if (cmd.Timestamp == 0)
 			{
 				cmd.Timestamp = DateTime.UtcNow.Ticks;
 			}
 
-			byte[] packet = MyAPIGateway.Utilities.SerializeToBinary(cmd);
+			return MyAPIGateway.Utilities.SerializeToBinary(cmd);
+		}
 
-			// The engine silently drops unreliable messages over its size limit
-			// and reports the failure through a return value nobody reads. Send
-			// those reliably instead of losing them.
+		private void Send(byte[] packet, ulong steamId, bool isReliable)
+		{
 			if (!isReliable && packet.Length > UnreliableMessageLimit)
 			{
 				isReliable = true;
 			}
 
-			if (LogNetworkTraffic)
-			{
-				MyLog.Default.Info($"[NetworkAPI] _TRANSMITTING_ Bytes: {packet.Length}  Command: {cmd.CommandString}  To: {players.Count} Users within {radius}m");
-			}
-
-			for (int i = 0; i < players.Count; i++)
-			{
-				MyAPIGateway.Multiplayer.SendMessageTo(ComId, packet, players[i].SteamUserId, isReliable);
-			}
+			MyAPIGateway.Multiplayer.SendMessageTo(ComId, packet, steamId, isReliable);
 		}
 
 		public override void Say(string message)
