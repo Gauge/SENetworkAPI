@@ -67,6 +67,8 @@ namespace SENetworkAPI
 				dueAnswers.Clear();
 				pendingAnswerTargets.Clear();
 				dueAnswerTargets.Clear();
+				answersByTarget.Clear();
+				answerTargets.Clear();
 				flushScheduled = false;
 				generatorId = 1;
 			}
@@ -133,6 +135,8 @@ namespace SENetworkAPI
 		private static List<ulong> pendingAnswerTargets = new List<ulong>();
 		private static List<NetSync> dueAnswers = new List<NetSync>();
 		private static List<ulong> dueAnswerTargets = new List<ulong>();
+		private static readonly Dictionary<ulong, List<SyncData>> answersByTarget = new Dictionary<ulong, List<SyncData>>();
+		private static readonly List<ulong> answerTargets = new List<ulong>();
 
 		internal static void QueueForFlush(NetSync property)
 		{
@@ -308,29 +312,35 @@ namespace SENetworkAPI
 
 			for (int i = 0; i < dueAnswers.Count; i++)
 			{
-				if (dueAnswers[i] == null)
-				{
-					continue;
-				}
-
 				ulong target = dueAnswerTargets[i];
-				batch.Clear();
-				CollectAnswer(dueAnswers[i], target, batch);
+				List<SyncData> answers;
 
-				for (int j = i + 1; j < dueAnswers.Count; j++)
+				if (!answersByTarget.TryGetValue(target, out answers))
 				{
-					if (dueAnswers[j] != null && dueAnswerTargets[j] == target)
-					{
-						CollectAnswer(dueAnswers[j], target, batch);
-						dueAnswers[j] = null;
-					}
+					answers = new List<SyncData>();
+					answersByTarget.Add(target, answers);
 				}
 
-				SendBatch(batch, null, target, "fetch answers");
+				if (!answerTargets.Contains(target))
+				{
+					answerTargets.Add(target);
+				}
+
+				CollectAnswer(dueAnswers[i], target, answers);
 			}
 
 			dueAnswers.Clear();
 			dueAnswerTargets.Clear();
+
+			for (int i = 0; i < answerTargets.Count; i++)
+			{
+				ulong target = answerTargets[i];
+				List<SyncData> answers = answersByTarget[target];
+				SendBatch(answers, null, target, "fetch answers");
+				answers.Clear();
+			}
+
+			answerTargets.Clear();
 		}
 
 		private static void CollectAnswer(NetSync property, ulong sender, List<SyncData> into)
@@ -522,6 +532,7 @@ namespace SENetworkAPI
 		private bool alwaysSend;
 
 		private static readonly bool ComparisonIsMeaningful = IsComparisonMeaningful();
+		private static readonly EqualityComparer<T> Comparer = EqualityComparer<T>.Default;
 
 		private static bool IsComparisonMeaningful()
 		{
@@ -619,7 +630,7 @@ namespace SENetworkAPI
 			if (entity != null)
 			{
 				Entity = entity;
-				Entity.OnClose += Entity_OnClose;
+				bool firstOnEntity;
 
 				lock (locker)
 				{
@@ -628,12 +639,20 @@ namespace SENetworkAPI
 					{
 						properties.Add(this);
 						Id = properties.Count - 1;
+						firstOnEntity = false;
 					}
 					else
 					{
 						PropertiesByEntity.Add(Entity, new List<NetSync> { this });
 						Id = 0;
+						firstOnEntity = true;
 					}
+				}
+
+				if (firstOnEntity)
+				{
+					Entity.OnClose += Entity_OnClose;
+					Entity.AddedToScene += SyncOnAddedToScene;
 				}
 			}
 			else
@@ -645,16 +664,9 @@ namespace SENetworkAPI
 				}
 			}
 
-			if (SyncOnLoad)
+			if (SyncOnLoad && Entity == null)
 			{
-				if (Entity != null)
-				{
-					Entity.AddedToScene += SyncOnAddedToScene;
-				}
-				else
-				{
-					Fetch();
-				}
+				Fetch();
 			}
 
 			if (NetworkAPI.LogNetworkTraffic)
@@ -663,13 +675,27 @@ namespace SENetworkAPI
 			}
 		}
 
-		private void SyncOnAddedToScene(MyEntity e) 
+		private void SyncOnAddedToScene(MyEntity e)
 		{
-			if (Entity != e)
-				return;
+			e.AddedToScene -= SyncOnAddedToScene;
 
-			Fetch();			
-			Entity.AddedToScene -= SyncOnAddedToScene;
+			List<NetSync> properties;
+
+			lock (locker)
+			{
+				if (!PropertiesByEntity.TryGetValue(e, out properties))
+				{
+					return;
+				}
+			}
+
+			for (int i = 0; i < properties.Count; i++)
+			{
+				if (properties[i].SyncOnLoad)
+				{
+					properties[i].Fetch();
+				}
+			}
 		}
 
 		private void Entity_OnClose(MyEntity entity)
@@ -728,7 +754,7 @@ namespace SENetworkAPI
 		{
 			T oldval = _value;
 
-			if (!alwaysSend && ComparisonIsMeaningful && EqualityComparer<T>.Default.Equals(oldval, val))
+			if (!alwaysSend && ComparisonIsMeaningful && Comparer.Equals(oldval, val))
 			{
 				return;
 			}

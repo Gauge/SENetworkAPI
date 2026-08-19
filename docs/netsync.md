@@ -164,7 +164,11 @@ property.BeforeFetchRequestResponse += senderSteamId => { };
 ## Sync on load
 
 With `syncOnLoad: true` (the default) the property asks for the current value as
-soon as it can:
+soon as it can. Requests are batched: every fetch raised in the same frame
+travels in one packet, and the server's answers are batched per requesting
+player, so a grid streaming in costs a couple of packets rather than one per
+property. A fetch has always been answered asynchronously, so the frame of
+delay changes nothing you could observe.
 
 * **Session-scoped**: immediately, in the constructor.
 * **Entity-scoped**: on the entity's `AddedToScene` event, then it unsubscribes.

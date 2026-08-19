@@ -177,6 +177,57 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
+		public void AnEntityIsHookedOnceHoweverManyPropertiesItHas()
+		{
+			// A grid streaming in creates thousands of these; one subscription
+			// per entity rather than one per property.
+			GivenClient();
+			MyEntity entity = Game.CreateEntity();
+
+			for (int i = 0; i < 8; i++)
+			{
+				new NetSync<int>(entity, TransferType.Both);
+			}
+
+			Assert.Equal(1, entity.OnCloseSubscriberCount);
+			Assert.Equal(1, entity.AddedToSceneSubscriberCount);
+		}
+
+		[Fact]
+		public void EveryPropertyOnTheEntityFetchesWhenItEntersTheScene()
+		{
+			GivenClient();
+			MyEntity entity = Game.CreateEntity();
+
+			for (int i = 0; i < 8; i++)
+			{
+				new NetSync<int>(entity, TransferType.Both);
+			}
+
+			Game.ClearTraffic();
+			entity.AddToScene();
+			Game.NextFrame();
+
+			Assert.Equal(8, DecodeSyncDataList(Assert.Single(Game.Sent)).Count);
+		}
+
+		[Fact]
+		public void PropertiesThatOptOutOfSyncOnLoadAreLeftOutOfTheSceneFetch()
+		{
+			GivenClient();
+			MyEntity entity = Game.CreateEntity();
+			new NetSync<int>(entity, TransferType.Both);
+			new NetSync<int>(entity, TransferType.Both, 0, syncOnLoad: false);
+			new NetSync<int>(entity, TransferType.Both);
+
+			Game.ClearTraffic();
+			entity.AddToScene();
+			Game.NextFrame();
+
+			Assert.Equal(2, DecodeSyncDataList(Assert.Single(Game.Sent)).Count);
+		}
+
+		[Fact]
 		public void EntityProperty_UnsubscribesAfterItsFirstSceneEntry()
 		{
 			GivenClient();

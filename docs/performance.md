@@ -32,6 +32,10 @@ the code as it was prior to the optimisation work.
 | receive command packet | 312 | **296** | 777 | **715** |
 | 8 properties on a block, one frame | 8192 | **4359** | 3462 | **1954** |
 | entity property assign, nobody in range | 904 | **504** | 376 | **218** |
+| client streams in 200 blocks x 4 properties | 920563 | **246692** | 368714 | **134455** |
+| server answers those 800 fetches | 1019352 | **574552** | 799669 | **486805** |
+
+The last two rows are also **800 packets each way, down to 2**.
 
 The last row needs `Coalesce()`; everything else is automatic.
 
@@ -49,6 +53,15 @@ What changed, and why:
 * **Unchanged values.** An assignment that changes nothing no longer sends.
 * **Coalescing.** Opt-in batching turns a block's simultaneous property changes
   into one packet.
+* **Sync-on-load batching.** Joining a world had every property on every block
+  that streamed in send its own fetch, and the server answer each one
+  separately. Both sides now collect for a frame and travel together, answers
+  grouped per requesting player, capped at 500 updates per packet. This one is
+  automatic: a fetch was always answered asynchronously, so a frame of delay
+  changes nothing observable.
+* **One event subscription per entity.** Properties used to hook their entity's
+  close and scene-entry events individually; a grid with four properties per
+  block allocated four of each per block.
 * **Player snapshot.** The range query used to walk the engine's player list and
   call `GetPosition()` per player, per property, per frame. It is snapshotted
   once per frame into parallel arrays, after which the range test is arithmetic.
@@ -79,8 +92,8 @@ grows a buffer, and copies it out with `ToArray`. Removing a pass would mean
 changing the packet layout, which every mod already on the network would have
 to change with it. Not worth it.
 
-One encode pass per distinct value is therefore the floor, and coalescing is
-what gets the *number* of values down.
+One encode pass per distinct value is therefore the floor, and batching is what
+gets the *number of packets* down.
 
 Two things were tried and rejected:
 

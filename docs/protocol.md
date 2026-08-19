@@ -41,8 +41,10 @@ ways. Receivers understand all three; senders only ever produce the first two.
 | Layout | Where the update is | Produced by |
 | --- | --- | --- |
 | single | `Property` | every property send |
-| batched | `Properties` | a coalesced flush with more than one update |
+| batched | `Properties` | a flush carrying more than one update: coalesced values, sync-on-load fetches, or fetch answers to one player |
 | original | encoded bytes in `Data` | builds predating the inline layout |
+
+A batch carries at most 500 updates; a flush with more splits across packets.
 
 The original layout cost an extra encode pass, because `SyncData` was
 serialized to bytes and those bytes were then serialized inside `Command`.
