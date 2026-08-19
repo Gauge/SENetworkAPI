@@ -82,6 +82,40 @@ property.Value.SomeField = "hi";
 property.Push();
 ```
 
+### Tuning a property
+
+Three opt-in switches, chainable so they read well at the declaration site:
+
+```csharp
+health   = new NetSync<float>(this, TransferType.ServerToClient, 100f).Coalesce();
+aimPoint = new NetSync<Vector3D>(this, TransferType.Both).Lossy();
+heartbeat = new NetSync<int>(this, TransferType.Both).AlwaysSend();
+```
+
+| | What it does | When to use it |
+| --- | --- | --- |
+| `Coalesce()` | Batches this property's updates with every other coalesced property that changes in the same frame, into one packet. Costs one frame of latency. | Blocks whose properties change together |
+| `Lossy()` | Sends updates on the unreliable channel when they fit; falls back to reliable when they do not. Fetches stay reliable. | Values overwritten constantly, where a dropped update is superseded anyway |
+| `AlwaysSend()` | Restores sending on every assignment, even when the value is unchanged | A property used as an event or heartbeat rather than a state |
+
+Coalescing groups by destination — owning entity, distance rule and
+reliability — so properties on different entities still get their own packets.
+`Push()` ignores the batch and sends immediately.
+
+### Unchanged values are not sent
+
+Assigning a value equal to the one already held does nothing: no packet, and
+`ValueChanged` does not fire. This applies to types where comparison is cheap
+and means what it looks like — primitives, strings, and structs that compare
+without boxing.
+
+**Reference types are always sent.** The same `List<T>` instance can hold
+different items from one assignment to the next, so "same reference" must never
+be read as "nothing changed".
+
+`AlwaysSend()` restores the original behaviour, and `Push()` has always sent
+unconditionally.
+
 ### Sync types
 
 | `SyncType` | Meaning |
@@ -116,10 +150,10 @@ property.ValueChangedByNetwork += (oldValue, newValue, senderSteamId) => { };
 property.BeforeFetchRequestResponse += senderSteamId => { };
 ```
 
-* `ValueChanged` fires on **every** assignment — local or remote, and even when
-  the new value equals the old one. It does *not* fire for `Push()`, which sends
-  without changing anything. Nothing deduplicates, so if you assign on a timer,
-  compare first: `if (property.Value != computed) property.Value = computed;`.
+* `ValueChanged` fires on every assignment that actually changes the value,
+  local or remote. It does *not* fire for `Push()`, which sends without changing
+  anything, nor for an assignment that changes nothing (unless you called
+  `AlwaysSend()`).
 * `ValueChangedByNetwork` fires only for values arriving over the network, after
   `ValueChanged`. `senderSteamId` is 0 for updates originating on a dedicated
   server.
@@ -163,6 +197,7 @@ a late update — they only re-sync if something triggers a fetch or another pus
 | The transfer type forbids this direction | only with `LogNetworkTraffic` |
 | `MyAPIGateway.Session.OnlineMode == OFFLINE` | only with `LogNetworkTraffic` |
 | `Value` is `null` and the sync type carries a value | only with `LogNetworkTraffic` |
+| the new value equals the old one (unless `AlwaysSend()`) | no |
 
 In every case the local value is still updated and `ValueChanged` still fires;
 only the network send is skipped. Turn on `NetworkAPI.LogNetworkTraffic = true`

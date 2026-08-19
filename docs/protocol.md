@@ -16,6 +16,8 @@ One packet type crosses the wire. It is a protobuf-net contract serialized with
 | 5 | `Timestamp` | `long` | `DateTime.Ticks`, UTC. |
 | 6 | `IsProperty` | `bool` | Route to `NetSync.RouteMessage` instead of the command dispatcher. |
 | 7 | `IsCompressed` | `bool` | `Data` is GZip/`MyCompression` compressed. |
+| 8 | `Property` | `SyncData` | A property update, carried inline. |
+| 9 | `Properties` | `List<SyncData>` | Several property updates batched into one packet. |
 
 ### The `SteamId` asymmetry
 
@@ -31,9 +33,26 @@ On the receive side, `SteamId` is always treated as "who sent this" — it is wh
 gets passed to network command callbacks, `OnCommandRecived`, and
 `ValueChangedByNetwork`.
 
+### Property layouts
+
+A property packet sets `IsProperty` and then carries the update in one of three
+ways. Receivers understand all three; senders only ever produce the first two.
+
+| Layout | Where the update is | Produced by |
+| --- | --- | --- |
+| single | `Property` | every property send |
+| batched | `Properties` | a coalesced flush with more than one update |
+| original | encoded bytes in `Data` | builds predating the inline layout |
+
+The original layout cost an extra encode pass, because `SyncData` was
+serialized to bytes and those bytes were then serialized inside `Command`.
+Protobuf charges per call, not per payload — a nested message rides along in
+the envelope's own pass for free.
+
 ## `SyncData`
 
-`NetSync.cs`, `internal`. Carried inside `Command.Data` when `IsProperty` is set.
+`NetSync.cs`, `internal`. Carried by `Command.Property` or `Command.Properties`
+(and, from older builds, as encoded bytes in `Command.Data`).
 
 | # | Field | Type | Meaning |
 | --- | --- | --- | --- |
@@ -44,17 +63,15 @@ gets passed to network command callbacks, `OnCommandRecived`, and
 
 ## Compression
 
-`NetworkAPI.CompressionThreshold` is `100000` bytes. Both send paths do:
+`NetworkAPI.CompressionThreshold` is `1024` bytes and is settable at runtime.
+Payloads over it are compressed, and the compressed copy is kept only if it
+actually came out smaller — random or already-compressed data is sent raw
+rather than paying for a decompression at the other end that gains nothing.
 
-```csharp
-if (cmd.Data != null && cmd.Data.Length > CompressionThreshold)
-{
-    cmd.Data = MyCompression.Compress(cmd.Data);
-    cmd.IsCompressed = true;
-}
-```
-
-The threshold is exclusive: a payload of exactly 100000 bytes is sent raw.
+The threshold used to be 100000, above both the network MTU and the engine's
+unreliable ceiling, so in practice nothing was ever compressed. Because packets
+carry an `IsCompressed` flag, the value is self-describing: changing it needs no
+agreement between the two ends.
 Decompression happens once, in `HandleIncomingPacket`, before any dispatch, so
 callbacks always see the original bytes.
 
@@ -90,11 +107,10 @@ hard rule before anything touches the network:
 if (!reliable && message.Length > 1024) return false;
 ```
 
-The packet is dropped, and SENetworkAPI discards that `false`. Because
-compression runs first, the limit applies to the *compressed* packet — a highly
-compressible payload can slip under it, an incompressible 2KB one cannot. Treat
-`isReliable: false` as "tiny packets only". See
-[known-issues.md](known-issues.md#unreliable-messages-over-1024-bytes-are-silently-discarded-engine-verified).
+Rather than let that happen, both send paths check the encoded packet and
+upgrade an oversized unreliable message to reliable. `isReliable: false` is
+therefore a hint, not a way to lose data. Compression runs first, so the limit
+applies to the compressed packet.
 
 A packet addressed to the local player is delivered straight back into the local
 handlers (`HandleMessageClient`: `if (recipient == Sync.MyId)`), so a listen

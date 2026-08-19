@@ -80,6 +80,23 @@ void Push(ulong steamId);   // send it to one player
 Action<ulong> BeforeFetchRequestResponse;   // last chance to refresh before replying
 ```
 
+Three opt-in switches, chainable at the declaration:
+
+```csharp
+// batch this frame's changes into one packet with the block's other properties
+health = new NetSync<float>(this, TransferType.ServerToClient, 100f).Coalesce();
+
+// send on the unreliable channel when it fits - for values overwritten constantly
+aim = new NetSync<Vector3D>(this, TransferType.Both).Lossy();
+
+// send on every assignment, even when the value did not change
+beat = new NetSync<int>(this, TransferType.Both).AlwaysSend();
+```
+
+By default an assignment that does not change the value sends nothing and does
+not raise `ValueChanged`; reference types are always sent, since their contents
+can change behind the reference. `AlwaysSend()` restores the old behaviour.
+
 Details: [docs/netsync.md](docs/netsync.md).
 
 ## Commands

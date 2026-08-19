@@ -4,7 +4,7 @@
 dotnet test tests/SENetworkAPI.Tests
 ```
 
-216 tests, no game install required, about a second to run.
+252 tests, no game install required, about a second to run.
 
 If you have the game installed, there is a second check that needs no test
 runner — it compiles the shipped sources against the real assemblies:

@@ -19,34 +19,47 @@ and the allocation counts come from the same code the game would run.
 ## Where it stands
 
 Measured on .NET 9, workstation GC, 200k iterations per scenario. "before" is
-the code as it was prior to the optimisation pass.
+the code as it was prior to the optimisation work.
 
 | scenario | bytes/op before | after | ns/op before | after |
 | --- | ---: | ---: | ---: | ---: |
 | chat line that is not ours | 408 | **0** | 125 | **5** |
-| chat line that is ours | 440 | **240** | 155 | **68** |
-| property fetch | 3720 | **920** | 1792 | **242** |
-| receive command packet | 312 | **280** | 777 | **708** |
-| server receives + relays a property | 1784 | **1384** | 1541 | **1448** |
-| entity property assign (8 recipients) | 1896 | **1768** | 1051 | **1025** |
-| entity property assign (3 recipients of 64 players) | 1608 | **1480** | 469 | **448** |
-| session property assign | 1336 | **1312** | 795 | **799** |
+| chat line that is ours | 440 | **240** | 155 | **67** |
+| property fetch | 3720 | **560** | 1792 | **185** |
+| session property assign | 1336 | **944** | 795 | **734** |
+| entity property assign (8 recipients) | 1896 | **1224** | 1051 | **~500** |
+| server receives + relays a property | 1784 | **1040** | 1541 | **1415** |
+| receive command packet | 312 | **296** | 777 | **715** |
+| 8 properties on a block, one frame | 8192 | **4359** | 3462 | **1954** |
+
+The last row needs `Coalesce()`; everything else is automatic.
 
 What changed, and why:
 
 * **Chat.** The old handler lower-cased and split every message before deciding
   it was not addressed to this mod. Since every mod using the API pays that on
   every line anyone types, it is now a prefix comparison: no allocation at all.
+* **One less encode pass.** Property updates used to be encoded to bytes and
+  then encoded again inside the envelope. Protobuf charges per call — a
+  `MemoryStream` and a `ToArray` every time, about 376 bytes whatever is in it —
+  so nesting the message instead of its bytes removes a third of the cost.
 * **Fetch.** A fetch used to encode and ship the requester's current value,
-  which the receiver discards. It now sends the address only.
-* **Relay.** A server re-broadcasting a value it just received reuses the bytes
-  it was handed rather than re-encoding the value it decoded from them.
-* **Range queries.** The positional send built a closure per call to carry
-  point/radius/sender into the filter. The filters are cached delegates now.
+  which the receiver discards. It sends the address only.
+* **Unchanged values.** An assignment that changes nothing no longer sends.
+* **Coalescing.** Opt-in batching turns a block's simultaneous property changes
+  into one packet.
+* **Player snapshot.** The range query used to walk the engine's player list and
+  call `GetPosition()` per player, per property, per frame. It is snapshotted
+  once per frame into parallel arrays, after which the range test is arithmetic.
+* **Relay.** A server re-broadcasting a value reuses the bytes it was handed.
+* **Range filters.** Cached delegates instead of a closure allocated per send.
 * **Receive.** No `Split()` to read the first word of a command, one `DateTime`
-  instead of two, one dictionary probe instead of two, and no lower-casing.
-* **`lock (_value)`.** Boxed the value on every assignment of a value type. It
-  is gone (it also protected nothing — see [known-issues.md](known-issues.md)).
+  instead of two, one dictionary probe instead of two, no lower-casing.
+* **`lock (_value)`.** Boxed the value on every assignment of a value type. Gone
+  (it also protected nothing — see [known-issues.md](known-issues.md)).
+* **Compression.** The threshold was 100000 bytes, above both the MTU and the
+  engine's unreliable ceiling, so nothing was ever compressed in practice. It is
+  1024 now, settable, and the compressed copy is kept only when it is smaller.
 
 ## What is left, and why
 
@@ -62,21 +75,20 @@ grows a buffer, and copies it out with `ToArray`. Removing a pass would mean
 changing the packet layout, which every mod already on the network would have
 to change with it. Not worth it.
 
+One encode pass per distinct value is therefore the floor, and coalescing is
+what gets the *number* of values down.
+
 Two things were tried and rejected:
 
 * **Reusing a shared player list** across positional sends. It removed 128 bytes
   per send but measured consistently *slower* — a long-lived array takes write
   barriers on every store and is rescanned by every Gen0 collection. The
   short-lived list wins.
-* **Skipping sends when the value has not changed.** Tempting, since mods often
-  assign every frame, but `NetSync` has always treated every assignment as a
-  change, and `EqualityComparer<T>.Default` boxes for structs that do not
-  implement `IEquatable<T>` — which would make the common case worse. If your
-  mod assigns on a timer, compare before assigning:
-
-  ```csharp
-  if (property.Value != computed) property.Value = computed;
-  ```
+* **Blanket change detection.** Now the default, but only for types where
+  comparison is cheap and meaningful. `EqualityComparer<T>.Default` boxes for
+  structs that do not implement `IEquatable<T>`, and reference equality would be
+  actively wrong for a mutable `List<T>` — the same instance with different
+  contents would look unchanged. Both cases fall back to always sending.
 
 ## Rules this code has to play by
 
