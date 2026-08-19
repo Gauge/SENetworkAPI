@@ -6,27 +6,27 @@ using VRageMath;
 
 namespace SENetworkAPI
 {
+	/// <summary>Client side of the API. All traffic is addressed to the server.</summary>
 	public class Client : NetworkAPI
 	{
-
-		/// <summary>
-		/// Handles communication with the server
-		/// </summary>
-		/// <param name="comId">Identifies the channel to pass information to and from this mod</param>
-		/// <param name="keyword">identifies what chat entries should be captured and sent to the server</param>
+		/// <summary>Use <see cref="NetworkAPI.Init"/> instead of constructing this directly.</summary>
+		/// <param name="comId">The communication channel this mod sends and listens on</param>
+		/// <param name="modName">Sender name used for chat messages the API prints</param>
+		/// <param name="keyword">Chat command prefix, or null to disable chat commands</param>
 		public Client(ushort comId, string modName, string keyword = null) : base(comId, modName, keyword)
 		{
 		}
 
 		/// <summary>
-		/// Sends a command packet to the server
+		/// Sends a command to the server, stamped with the local player's steam
+		/// id. Does nothing when there is no session.
 		/// </summary>
-		/// <param name="commandString">The command to be executed</param>
-		/// <param name="message">Text that will be displayed in client chat</param>
-		/// <param name="data">A serialized object to be sent across the network</param>
-		/// <param name="sent">The date timestamp this command was sent</param>
-		/// <param name="steamId">Ignored: a client can only send to the server</param>
-		/// <param name="isReliable">Ensure delivery of the packet</param>
+		/// <param name="commandString">Command name, plus any arguments delimited with spaces</param>
+		/// <param name="message">Text to display in chat on arrival</param>
+		/// <param name="data">Serialized payload</param>
+		/// <param name="sent">Send timestamp. Defaults to now</param>
+		/// <param name="steamId">Ignored: clients can only address the server</param>
+		/// <param name="isReliable">False permits the unreliable channel for small packets</param>
 		public override void SendCommand(string commandString, string message = null, byte[] data = null, DateTime? sent = null, ulong steamId = ulong.MinValue, bool isReliable = true)
 		{
 			IMyPlayer player = MyAPIGateway.Session?.Player;
@@ -42,19 +42,10 @@ namespace SENetworkAPI
 			}
 		}
 
-		/// <summary>
-		/// Sends a command packet to the server
-		/// </summary>
-		/// <param name="cmd">The object to be sent to the client</param>
-		/// <param name="steamId">The users steam ID</param>
-		/// <param name="isReliable">Makes sure the message is recieved by the server</param>
 		internal override void SendCommand(Command cmd, ulong steamId = ulong.MinValue, bool isReliable = true)
 		{
 			Compress(cmd);
 
-			// Only stamp commands that do not carry one already: NetSync builds
-			// its packets without a timestamp, but a caller that passed `sent`
-			// should get the time they asked for.
 			if (cmd.Timestamp == 0)
 			{
 				cmd.Timestamp = DateTime.UtcNow.Ticks;
@@ -72,39 +63,30 @@ namespace SENetworkAPI
 			MyAPIGateway.Multiplayer.SendMessageToServer(ComId, packet, isReliable);
 		}
 
-		/// <summary>
-		/// Sends a command packet to the server
-		/// </summary>
-		/// <param name="commandString">The command to be executed</param>
-		/// <param name="point">Ignored: a client can only send to the server</param>
-		/// <param name="radius">Ignored: a client can only send to the server</param>
-		/// <param name="message">Text that will be displayed in client chat</param>
-		/// <param name="data">A serialized object to be sent across the network</param>
-		/// <param name="sent">The date timestamp this command was sent</param>
-		/// <param name="steamId">Ignored: a client can only send to the server</param>
-		/// <param name="isReliable">Ensure delivery of the packet</param>
+		/// <summary>Sends a command to the server. Position is ignored on a client.</summary>
+		/// <param name="commandString">Command name, plus any arguments delimited with spaces</param>
+		/// <param name="point">Ignored on a client</param>
+		/// <param name="radius">Ignored on a client</param>
+		/// <param name="message">Text to display in chat on arrival</param>
+		/// <param name="data">Serialized payload</param>
+		/// <param name="sent">Send timestamp. Defaults to now</param>
+		/// <param name="steamId">Ignored: clients can only address the server</param>
+		/// <param name="isReliable">False permits the unreliable channel for small packets</param>
 		public override void SendCommand(string commandString, Vector3D point, double radius = 0, string message = null, byte[] data = null, DateTime? sent = null, ulong steamId = 0, bool isReliable = true)
 		{
 			SendCommand(commandString, message, data, sent, steamId, isReliable);
 		}
 
-		/// <summary>
-		/// Sends a command packet to the server
-		/// </summary>
-		/// <param name="cmd">The object to be sent to the client</param>
-		/// <param name="point">Client side send to server this is not used</param>
-		/// <param name="radius">Client side send to server this is not used</param>
-		/// <param name="steamId">The users steam ID</param>
-		/// <param name="isReliable">Makes sure the message is recieved by the server</param>
 		internal override void SendCommand(Command cmd, Vector3D point, double radius = 0, ulong steamId = 0, bool isReliable = true)
 		{
 			SendCommand(cmd, steamId, isReliable);
 		}
 
 		/// <summary>
-		/// Sends a line of chat to the server, which relays it to everyone. It
-		/// is not shown locally until that relay arrives back.
+		/// Sends a line of chat to the server, which relays it. Not shown locally
+		/// until that relay arrives.
 		/// </summary>
+		/// <param name="message">The text to post</param>
 		public override void Say(string message)
 		{
 			SendCommand(null, message);

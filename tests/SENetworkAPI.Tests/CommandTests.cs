@@ -101,6 +101,17 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
+		public void SyncTypeValuesAreFixedByTheWireFormat()
+		{
+			// These numbers, not the names, are what travels. Reordering the
+			// enum would make two builds disagree about what a packet means.
+			Assert.Equal(0, (int)SyncType.Post);
+			Assert.Equal(1, (int)SyncType.Fetch);
+			Assert.Equal(2, (int)SyncType.Broadcast);
+			Assert.Equal(3, (int)SyncType.None);
+		}
+
+		[Fact]
 		public void SyncData_RoundTripsEveryField()
 		{
 			SyncData original = new SyncData {
