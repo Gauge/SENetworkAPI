@@ -200,6 +200,21 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
+		public void AThrowingChatCommand_DoesNotEscapeIntoTheGamesChatEvent()
+		{
+			// MessageEntered is a multicast delegate shared with every other mod.
+			// An exception escaping here would stop the mods behind us in the
+			// invocation list from seeing the message at all.
+			NetworkAPI api = GivenServer(Keyword);
+			api.RegisterChatCommand("boom", _ => { throw new InvalidOperationException("mod bug"); });
+
+			Exception thrown = Record.Exception(() => Game.Utilities.SimulateChat("/test boom"));
+
+			Assert.Null(thrown);
+			Assert.True(LoggedError("threw"));
+		}
+
+		[Fact]
 		public void UnregisterChatCommand_StopsDispatch()
 		{
 			NetworkAPI api = GivenServer(Keyword);

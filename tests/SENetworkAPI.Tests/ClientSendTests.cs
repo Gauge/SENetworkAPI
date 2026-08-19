@@ -70,19 +70,26 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
-		public void SendCommand_IgnoresTheSuppliedTimestamp()
+		public void SendCommand_HonoursTheSuppliedTimestamp()
 		{
-			// Documented quirk: the public overload accepts `sent`, but the
-			// internal sender overwrites Timestamp with DateTime.UtcNow.Ticks.
 			Client client = GivenClient();
 			DateTime past = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-			long before = DateTime.UtcNow.Ticks;
 
 			client.SendCommand("update", sent: past);
 
-			long stamp = TheOnlyCommandSent().Timestamp;
-			Assert.NotEqual(past.Ticks, stamp);
-			Assert.InRange(stamp, before, DateTime.UtcNow.Ticks);
+			Assert.Equal(past.Ticks, TheOnlyCommandSent().Timestamp);
+		}
+
+		[Fact]
+		public void SendCommand_StampsCommandsThatDoNotCarryATime()
+		{
+			// NetSync builds its packets without a timestamp; they still get one.
+			Client client = GivenClient();
+			long before = DateTime.UtcNow.Ticks;
+
+			client.SendCommand(new Command { CommandString = "update" });
+
+			Assert.InRange(TheOnlyCommandSent().Timestamp, before, DateTime.UtcNow.Ticks);
 		}
 
 		[Fact]

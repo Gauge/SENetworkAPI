@@ -196,7 +196,12 @@ namespace SENetworkAPI
 				MyAPIGateway.Utilities.ShowMessage(ModName, cmd.Message);
 			}
 
-			cmd.Timestamp = DateTime.UtcNow.Ticks;
+			// Only stamp commands that do not carry one already; see Client.cs.
+			if (cmd.Timestamp == 0)
+			{
+				cmd.Timestamp = DateTime.UtcNow.Ticks;
+			}
+
 			byte[] packet = MyAPIGateway.Utilities.SerializeToBinary(cmd);
 
 			if (LogNetworkTraffic)

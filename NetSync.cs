@@ -294,9 +294,10 @@ namespace SENetworkAPI
 		/// </summary>
 		internal override void SetNetworkValue(byte[] data, ulong sender)
 		{
+			T oldval = _value;
+
 			try
 			{
-				T oldval = _value;
 				_value = MyAPIGateway.Utilities.SerializeFromBinary<T>(data);
 
 				if (NetworkAPI.LogNetworkTraffic)
@@ -304,20 +305,39 @@ namespace SENetworkAPI
 					MyLog.Default.Info($"[NetworkAPI] {Descriptor()} Old value: {oldval} --- New value: {_value}");
 				}
 
-				if (MyAPIGateway.Multiplayer.IsServer)
-				{
-					// Relay the bytes we were handed instead of serializing the
-					// value again: nothing has touched it since it was decoded,
-					// so the two are identical.
-					SendValue(SyncType.Broadcast, ulong.MinValue, data);
-				}
-
-				ValueChanged?.Invoke(oldval, _value);
-				ValueChangedByNetwork?.Invoke(oldval, _value, sender);
 			}
 			catch (Exception e)
 			{
 				MyLog.Default.Error($"[NetworkAPI] Failed to deserialize network property data\n{e}");
+				return;
+			}
+
+			if (MyAPIGateway.Multiplayer.IsServer)
+			{
+				// Relay the bytes we were handed instead of serializing the
+				// value again: nothing has touched it since it was decoded, so
+				// the two are identical.
+				SendValue(SyncType.Broadcast, ulong.MinValue, data);
+			}
+
+			// A handler that throws must not look like a decode failure, and
+			// must not stop the other handler from running.
+			try
+			{
+				ValueChanged?.Invoke(oldval, _value);
+			}
+			catch (Exception e)
+			{
+				MyLog.Default.Error($"[NetworkAPI] {Descriptor()} ValueChanged handler threw:\n{e}");
+			}
+
+			try
+			{
+				ValueChangedByNetwork?.Invoke(oldval, _value, sender);
+			}
+			catch (Exception e)
+			{
+				MyLog.Default.Error($"[NetworkAPI] {Descriptor()} ValueChangedByNetwork handler threw:\n{e}");
 			}
 		}
 
@@ -348,9 +368,15 @@ namespace SENetworkAPI
 					return;
 				}
 
-				if (syncType != SyncType.Fetch && 
-					(TransferType == TransferType.ServerToClient && !MyAPIGateway.Multiplayer.IsServer) ||
-					(TransferType == TransferType.ClientToServer && MyAPIGateway.Multiplayer.IsServer))
+				bool isServer = MyAPIGateway.Multiplayer.IsServer;
+
+				// A fetch is a request for a value, not a value, so it is exempt
+				// from the direction check - in both directions. The brackets
+				// used to be missing, and && binds tighter than ||, so a server
+				// could not answer a fetch for a ClientToServer property.
+				if (syncType != SyncType.Fetch &&
+					((TransferType == TransferType.ServerToClient && !isServer) ||
+					 (TransferType == TransferType.ClientToServer && isServer)))
 				{
 					if (NetworkAPI.LogNetworkTraffic)
 					{

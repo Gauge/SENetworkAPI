@@ -376,19 +376,17 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
-		public void AServerCannotAnswerAFetchForAClientToServerProperty()
+		public void AServerCanAnswerAFetchForAClientToServerProperty()
 		{
-			// Operator precedence in the direction guard means the Fetch
-			// exemption does not apply to the ClientToServer branch. Harmless
-			// today because servers never originate a fetch, but it also blocks
-			// a server from replying to one for such a property.
+			// The Fetch exemption applies in both directions now that the
+			// direction check is bracketed the way it reads.
 			GivenServer();
 			NetSync<int> property = Property(TransferType.ClientToServer);
 			Game.ClearTraffic();
 
 			property.Push(SyncType.Fetch, ClientId);
 
-			Assert.Empty(Game.Sent);
+			Assert.Single(Game.Sent);
 		}
 
 		// -------------------------------------------------------------------

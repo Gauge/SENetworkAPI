@@ -248,16 +248,35 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
-		public void ThrowingCallback_IsContainedByTheReceiveHandler()
+		public void ThrowingCallback_IsContainedAndDoesNotAbandonTheRestOfThePacket()
 		{
-			// A mod callback that throws must not take down the message pump.
+			// A mod callback that throws must not take down the message pump,
+			// and must not stop the work queued behind it either.
 			NetworkAPI api = GivenClient();
+			bool eventRan = false;
+			api.OnCommandRecived += (s, c, d, t) => eventRan = true;
 			api.RegisterNetworkCommand("boom", (s, c, d, t) => { throw new InvalidOperationException("mod bug"); });
 
-			Exception thrown = Record.Exception(() => Receive(EncodeCommandPacket("boom")));
+			Exception thrown = Record.Exception(() => Receive(EncodeCommandPacket("boom", message: "still shown")));
 
 			Assert.Null(thrown);
-			Assert.True(LoggedError("Failure in message processing"));
+			Assert.True(LoggedError("threw"));
+			Assert.True(eventRan);
+			Assert.Single(Game.ShownMessages);
+		}
+
+		[Fact]
+		public void AThrowingEventSubscriber_DoesNotStopTheRegisteredCallback()
+		{
+			NetworkAPI api = GivenClient();
+			bool callbackRan = false;
+			api.OnCommandRecived += (s, c, d, t) => { throw new InvalidOperationException("mod bug"); };
+			api.RegisterNetworkCommand("ping", (s, c, d, t) => callbackRan = true);
+
+			Receive(EncodeCommandPacket("ping"));
+
+			Assert.True(callbackRan);
+			Assert.True(LoggedError("OnCommandRecived"));
 		}
 
 		[Fact]

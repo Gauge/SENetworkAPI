@@ -82,13 +82,13 @@ namespace SENetworkAPI
 				// The keyword on its own maps to the empty command.
 				if (ChatCommands.TryGetValue(string.Empty, out callback))
 				{
-					callback?.Invoke(string.Empty);
+					Invoke(callback, string.Empty, string.Empty);
 					return;
 				}
 			}
 			else if (ChatCommands.TryGetValue(command, out callback))
 			{
-				callback?.Invoke(arguments.Substring(command.Length).Trim(' '));
+				Invoke(callback, command, arguments.Substring(command.Length).Trim(' '));
 				return;
 			}
 
@@ -133,6 +133,29 @@ namespace SENetworkAPI
 			int end = messageText.IndexOf(' ', start);
 
 			return (end < 0) ? messageText.Substring(start) : messageText.Substring(start, end - start);
+		}
+
+		/// <summary>
+		/// Runs a chat callback. This is called straight from the game's
+		/// MessageEntered event, which is a multicast delegate shared with every
+		/// other mod: letting an exception escape would stop the mods behind us
+		/// in the invocation list from ever seeing the message.
+		/// </summary>
+		private void Invoke(Action<string> callback, string command, string arguments)
+		{
+			if (callback == null)
+			{
+				return;
+			}
+
+			try
+			{
+				callback(arguments);
+			}
+			catch (Exception e)
+			{
+				MyLog.Default.Error($"[NetworkAPI] Chat command '{Keyword} {command}' threw:\n{e}");
+			}
 		}
 
 		/// <summary>
@@ -184,7 +207,7 @@ namespace SENetworkAPI
 					{
 						DateTime sent = new DateTime(cmd.Timestamp);
 
-						OnCommandRecived?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data, sent);
+						Invoke(OnCommandRecived, cmd, sent, "OnCommandRecived");
 
 						// The command is the first word. Split() would allocate an
 						// array plus a string per argument just to read it; a
@@ -195,7 +218,7 @@ namespace SENetworkAPI
 						Action<ulong, string, byte[], DateTime> callback;
 						if (NetworkCommands.TryGetValue(command, out callback))
 						{
-							callback?.Invoke(cmd.SteamId, cmd.CommandString, cmd.Data, sent);
+							Invoke(callback, cmd, sent, command);
 						}
 					}
 				}
@@ -209,6 +232,27 @@ namespace SENetworkAPI
 			catch (Exception e)
 			{
 				MyLog.Default.Error($"[NetworkAPI] Failure in message processing:\n{e.ToString()}");
+			}
+		}
+
+		/// <summary>
+		/// Runs a network callback in isolation, so one mod handler that throws
+		/// does not abandon the rest of the packet.
+		/// </summary>
+		private void Invoke(Action<ulong, string, byte[], DateTime> callback, Command cmd, DateTime sent, string label)
+		{
+			if (callback == null)
+			{
+				return;
+			}
+
+			try
+			{
+				callback(cmd.SteamId, cmd.CommandString, cmd.Data, sent);
+			}
+			catch (Exception e)
+			{
+				MyLog.Default.Error($"[NetworkAPI] Network command '{label}' threw:\n{e}");
 			}
 		}
 

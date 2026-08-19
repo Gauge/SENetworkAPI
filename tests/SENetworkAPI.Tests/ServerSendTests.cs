@@ -243,19 +243,16 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
-		public void RadiusSend_OverwritesTheSuppliedTimestamp()
+		public void RadiusSend_HonoursTheSuppliedTimestamp()
 		{
 			Server server = GivenServer();
 			Game.Players.Add(201, Vector3D.Zero);
 			Game.ClearTraffic();
 			DateTime past = new DateTime(2020, 6, 1, 0, 0, 0, DateTimeKind.Utc);
-			long before = DateTime.UtcNow.Ticks;
 
 			server.SendCommand("boom", Vector3D.Zero, 1000, sent: past);
 
-			long stamp = DecodeCommand(Game.Sent[0]).Timestamp;
-			Assert.NotEqual(past.Ticks, stamp);
-			Assert.InRange(stamp, before, DateTime.UtcNow.Ticks);
+			Assert.Equal(past.Ticks, DecodeCommand(Game.Sent[0]).Timestamp);
 		}
 
 		[Fact]

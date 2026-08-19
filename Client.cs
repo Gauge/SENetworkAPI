@@ -59,7 +59,14 @@ namespace SENetworkAPI
 				cmd.IsCompressed = true;
 			}
 
-			cmd.Timestamp = DateTime.UtcNow.Ticks;
+			// Only stamp commands that do not carry one already: NetSync builds
+			// its packets without a timestamp, but a caller that passed `sent`
+			// should get the time they asked for.
+			if (cmd.Timestamp == 0)
+			{
+				cmd.Timestamp = DateTime.UtcNow.Ticks;
+			}
+
 			byte[] packet = MyAPIGateway.Utilities.SerializeToBinary(cmd);
 
 			if (LogNetworkTraffic)
