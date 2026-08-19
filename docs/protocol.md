@@ -77,15 +77,10 @@ callbacks always see the original bytes.
 
 ## Timestamps
 
-`Command.Timestamp` is `DateTime.UtcNow.Ticks` at send time. Two of the four
-send paths overwrite whatever the caller passed as `sent`:
-
-| Path | Honours `sent`? |
-| --- | --- |
-| `Client.SendCommand(...)` | No — overwritten with now |
-| `Server.SendCommand(commandString, ...)` | Yes |
-| `Server.SendCommand(commandString, point, radius, ...)` | No — overwritten with now |
-| `Server.SendCommandTo(ids, ...)` | Yes |
+`Command.Timestamp` is `DateTime.UtcNow.Ticks` at send time. Every send path
+honours an explicit `sent`; only a command that arrives at the transport without
+a timestamp gets stamped, which is how `NetSync` packets (built without one) end
+up with the send time.
 
 Callbacks receive it as a `DateTime` (`new DateTime(cmd.Timestamp)`, so `Kind`
 is `Unspecified` even though the value is UTC). Helpers:

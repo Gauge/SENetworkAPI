@@ -56,7 +56,7 @@ flowchart TD
     F -->|yes| G[MyCompression.Decompress]
     F -->|no| H
     G --> H{cmd.IsProperty}
-    H -->|yes| I["NetSync.RouteMessage<br/>(SyncData)"]
+    H -->|yes| I["NetSync.RouteMessage<br/>one update, a batch, or<br/>the original encoded layout"]
     H -->|no| J["ShowMessage / relay<br/>+ OnCommandRecived<br/>+ NetworkCommands[cmd]"]
 ```
 
@@ -75,7 +75,9 @@ Network.SendCommand("update", data: MyAPIGateway.Utilities.SerializeToBinary(con
 
 **Properties** (`NetSync<T>`) are declarative. You declare a variable, assign to
 it, and the value appears on the other side. Internally each assignment becomes
-a `Command` with `IsProperty = true` carrying a `SyncData` payload.
+a `Command` with `IsProperty = true` carrying the update inline. Properties that
+opt into `Coalesce()` are held until the end of the frame and travel together in
+one packet.
 
 See [networkapi.md](networkapi.md) and [netsync.md](netsync.md) for the details.
 
@@ -85,6 +87,7 @@ See [networkapi.md](networkapi.md) and [netsync.md](netsync.md) for the details.
 sequenceDiagram
     participant Mod
     participant NetworkAPI
+    participant NetSync
     participant Game as MyAPIGateway
 
     Mod->>NetworkAPI: Init(comId, modName, keyword)
@@ -93,6 +96,7 @@ sequenceDiagram
     Note over Mod,Game: world runs
     Game->>NetworkAPI: SessionTools.UnloadData()
     NetworkAPI->>Game: unregister handlers
+    NetworkAPI->>NetSync: ClearRegistries()
     NetworkAPI->>NetworkAPI: Instance = null
 ```
 
@@ -111,9 +115,15 @@ because the channel is shared game-wide).
 | --- | --- | --- |
 | `NetworkAPI.Instance` | `Network.cs` | The single `Client`/`Server` for this mod |
 | `NetworkAPI.LogNetworkTraffic` | `Network.cs` | Verbose logging switch |
+| `NetworkAPI.CompressionThreshold` | `Network.cs` | Payload size above which packets are compressed |
 | `NetSync.PropertiesByEntity` | `NetSync.cs` | Entity-scoped properties, addressed by declaration order |
 | `NetSync.PropertyById` | `NetSync.cs` | Session-scoped properties, addressed by a generated id |
 | `NetSync.generatorId` | `NetSync.cs` | Counter behind those generated ids |
+| `NetSync.pending` | `NetSync.cs` | Coalesced properties waiting for this frame's flush |
+
+Everything but the two switches is cleared by `NetworkAPI.Dispose()`, which
+`SessionTools` calls on world unload — without that, a second world inherits the
+first one's properties.
 
 Because addressing depends on declaration order and on a shared counter, both
 sides of the connection must run the *same build of the mod*. See

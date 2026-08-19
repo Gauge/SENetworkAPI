@@ -144,7 +144,8 @@ and deliver those bytes — see `IntegrationTests`.
 | `ServerSendTests` | broadcast, targeted, multi-target and positional sends |
 | `NetSyncConstructionTests` | id assignment, registries, sync-on-load, `Descriptor()` |
 | `NetSyncValueTests` | value/events, sync types, transfer gating, packet shape, send guards |
-| `NetSyncNetworkTests` | receive routing, re-broadcast, routing failures, fetch replies |
+| `NetSyncNetworkTests` | receive routing, re-broadcast, routing failures, fetch replies, packet layouts |
+| `CoalescingTests` | opt-in batching: grouping, flush timing, interaction with Push and Fetch |
 | `TimingTests` | `GetDeltaMilliseconds` / `GetDeltaFrames` |
 | `SenderIdentityTests` | the trust model: unverified sender ids, arrival-side checks |
 | `IntegrationTests` | full client↔server exchanges |

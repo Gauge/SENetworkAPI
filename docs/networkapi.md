@@ -24,12 +24,14 @@ throws `InvalidOperationException` if that happens from another thread.
 Useful members:
 
 ```csharp
-static NetworkAPI Instance;            // the single instance for this mod
-static bool       IsInitialized;       // Instance != null
-static bool       LogNetworkTraffic;   // verbose logging into the SE log
+static NetworkAPI Instance;                // the single instance for this mod
+static bool       IsInitialized;           // Instance != null
+static bool       LogNetworkTraffic;       // verbose logging into the SE log
+static int        CompressionThreshold;    // payloads over this are compressed (1024)
+const  int        UnreliableMessageLimit;  // the engine's unreliable ceiling (1024)
 readonly ushort   ComId;
 readonly string   ModName;
-readonly string   Keyword;             // null when chat commands are off
+readonly string   Keyword;                 // null when chat commands are off
 ```
 
 `Close()` and `Dispose()` are obsolete. `SessionTools`, a session component
@@ -37,8 +39,9 @@ inside the API, calls `Dispose()` on world unload for you.
 
 ## Network commands
 
-A network command is a name plus a callback. Names are stored lower-cased and
-must be unique — registering the same name twice throws.
+A network command is a name plus a callback. Names keep the spelling you
+register them with, match case-insensitively, and must be unique — registering
+the same name twice, in any casing, throws.
 
 ```csharp
 Network.RegisterNetworkCommand("update", OnUpdate);
@@ -134,9 +137,10 @@ void Say(string message);   // SendCommand(null, message)
 Note the parameter order: `data` comes before `sent` and `steamId`, so pass them
 by name.
 
-Leave `isReliable` alone unless the packet is tiny: the engine silently drops
-any unreliable message whose compressed size exceeds 1024 bytes, and the failure
-is invisible to the caller.
+`isReliable: false` is a hint, not a risk: the engine refuses unreliable
+messages over `UnreliableMessageLimit` bytes, so both send paths check the
+encoded packet and upgrade an oversized one to reliable rather than letting it
+disappear. Compression runs first, so the limit applies to the compressed size.
 
 ### As a client
 
@@ -169,6 +173,10 @@ s.SendCommand("boom", position);                    // everyone within sync dist
   `distance² < radius²`, so the boundary is exclusive; the player identified by
   `Command.SteamId` is excluded (that is how an update avoids echoing to its
   originator); and passing an explicit `steamId` ignores distance entirely.
+* The player list behind the range test is snapshotted once per game frame, so
+  several sends in the same frame share one query. A player who joins mid-frame
+  is picked up on the next one; a send addressed at a specific `steamId` skips
+  the snapshot and queries the engine directly, so it never misses them.
 * On a listen server the host's own player is in `MyAPIGateway.Players`, so a
   positional send addresses a packet to the host as well — and the engine
   delivers it, so the host runs its own receive path. With a `message` attached

@@ -1,9 +1,10 @@
 # Known issues and sharp edges
 
-Everything below is **current behaviour**, pinned by a test in
-`tests/SENetworkAPI.Tests` so it cannot change silently. Nothing here has been
-"fixed" — the API is in use by a lot of mods and its behaviour, warts included,
-is the contract. Each entry names the test that documents it.
+Everything above the [Fixed](#fixed) section is **current behaviour**, pinned by
+a test in `tests/SENetworkAPI.Tests` so it cannot change silently. What is left
+here is behaviour that could not be changed without breaking mods that depend on
+it, or that the engine imposes on us. Each entry names the test that documents
+it.
 
 Findings marked **[engine-verified]** were checked against the shipped game
 assemblies (`Bin64`), not just against the test harness — decompiled from
@@ -67,9 +68,9 @@ work; they are the reason the finding above exists.
 
 ---
 
-## Data loss
+## Engine constraints the API works around
 
-### Unreliable messages over 1024 bytes are silently discarded **[engine-verified]**
+### Unreliable messages over 1024 bytes **[engine-verified]**
 
 Every send in `MyMultiplayerBase` starts with:
 
@@ -77,18 +78,15 @@ Every send in `MyMultiplayerBase` starts with:
 if (!reliable && message.Length > 1024) return false;
 ```
 
-`SendCommand(..., isReliable: false)` with a larger packet therefore vanishes:
-nothing reaches the network, nothing is logged, and the `bool` the engine
-returns is discarded by both `Client.SendCommand` and `Server.SendCommand`.
+The packet is dropped, and the `bool` is the only report — which nothing reads.
+Both send paths therefore measure the encoded packet and upgrade an oversized
+unreliable message to reliable rather than losing it, so `isReliable: false` and
+`NetSync.Lossy()` are safe to use on payloads of any size. Compression runs
+first, so it is the compressed size that counts.
 
-The compression threshold does not line up with this limit. Compression runs
-first, so what matters is the *compressed* size: a 100KB block of zeroes squeezes
-under 1024 bytes and gets through, while any incompressible payload over ~1KB —
-including everything between 1KB and the 100000-byte compression threshold —
-is dropped. Use `isReliable: true` (the default) for anything but tiny packets.
-
-*Tests: `ServerSendTests.UnreliableMessagesOverTheEngineLimitAreSilentlyDropped`,
-`ServerSendTests.WhetherAnUnreliableSendSurvivesDependsOnHowWellItCompresses`.*
+*Tests: `ServerSendTests.AnUnreliableSendTooBigForTheEngineIsUpgradedToReliable`,
+`ServerSendTests.CompressionCanBringAnUnreliableSendUnderTheLimit`,
+`NetSyncValueTests.Lossy_FallsBackToReliableForUpdatesTooBigForTheUnreliableChannel`.*
 
 ---
 
@@ -213,6 +211,27 @@ written against the old behaviour may contain workarounds that can now go.
 | `sent` was discarded by the client and by positional server sends | Honoured; only commands without a timestamp get stamped |
 | A fetch shipped a copy of the value the receiver discarded | It sends the address only |
 | The verbose log labelled old and new values the wrong way round | Fixed |
+| An unreliable message over 1024 bytes was dropped by the engine with no trace | Oversized unreliable sends are upgraded to reliable |
+| Nothing under 100000 bytes was ever compressed, which is above both the MTU and the unreliable ceiling | The threshold is 1024 and settable, and the compressed copy is kept only when it is smaller |
+| Every assignment sent a packet, even one that changed nothing | Unchanged assignments send nothing and do not raise `ValueChanged`; `AlwaysSend()` restores the old behaviour |
+| Every property update was its own packet | `Coalesce()` batches a frame's changes into one |
+| The range query walked the player list and called `GetPosition` per property, per frame | Snapshotted once per frame |
+
+---
+
+## Behaviour changes to be aware of
+
+Two of the fixes above change what an existing mod sees, so they are worth
+calling out rather than leaving in a table:
+
+* **Unchanged assignments no longer send, and no longer raise `ValueChanged`.**
+  A mod that used a `NetSync` as an event — assigning the same value to trigger
+  a heartbeat or to force a re-send — needs `AlwaysSend()` on that property, or
+  `Push()` at the point it wants the send.
+* **Command names now match case-insensitively.** A send of `"Update"` that
+  previously reached nobody will now reach the handler registered as `"update"`.
+  Nothing can break from this that was not already broken, but a callback that
+  never used to fire may start firing.
 
 ---
 

@@ -186,6 +186,11 @@ of this flag.
 The trade-off: a player who was out of range while a value changed does not get
 a late update — they only re-sync if something triggers a fetch or another push.
 
+The player list behind the range test is snapshotted once per game frame, so a
+block updating several properties pays for one query rather than one per
+property. A player who joins mid-frame receives their first update on the next
+frame.
+
 ## Things that silently do nothing
 
 `SendValue` returns early, without sending, when:
@@ -199,9 +204,10 @@ a late update — they only re-sync if something triggers a fetch or another pus
 | `Value` is `null` and the sync type carries a value | only with `LogNetworkTraffic` |
 | the new value equals the old one (unless `AlwaysSend()`) | no |
 
-In every case the local value is still updated and `ValueChanged` still fires;
-only the network send is skipped. Turn on `NetworkAPI.LogNetworkTraffic = true`
-when a value is not arriving — the log names the property and the reason.
+In all but the last case the local value is still updated and `ValueChanged`
+still fires; only the network send is skipped. An assignment that changes
+nothing does neither. Turn on `NetworkAPI.LogNetworkTraffic = true` when a value
+is not arriving — the log names the property and the reason.
 
 ### Null values
 
