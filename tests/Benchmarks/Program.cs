@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using Sandbox.ModAPI;
 using SEStubs;
 using SENetworkAPI;
 using VRage.Game.Components;
@@ -24,9 +25,12 @@ namespace SENetworkAPI.Benchmarks
 
 		private class Session : MySessionComponentBase { }
 
-		private static void Main()
+		private static string[] Filter;
+
+		private static void Main(string[] args)
 		{
-			Console.WriteLine($"SENetworkAPI hot path benchmark   ({(IsDebug() ? "DEBUG - rebuild with -c Release" : "release")})");
+			Filter = args;
+			if (args.Length == 0) Console.WriteLine($"SENetworkAPI hot path benchmark   ({(IsDebug() ? "DEBUG - rebuild with -c Release" : "release")})");
 			Console.WriteLine(new string('-', 78));
 			Console.WriteLine($"{"scenario",-46}{"bytes/op",12}{"ns/op",12}");
 			Console.WriteLine(new string('-', 78));
@@ -39,13 +43,14 @@ namespace SENetworkAPI.Benchmarks
 			Measure("8 properties on a block, same frame, 64 players", BlockOfPropertiesPerFrame);
 			Measure("  ... the same, coalesced", BlockOfPropertiesCoalesced);
 			Measure("property fetch (client -> server)", PropertyFetch);
-			Measure("client streams in 200 blocks x 4 properties", ClientStreamsInAGrid);
-			Measure("server answers 200 blocks x 4 fetches", ServerAnswersAGridOfFetches);
 			Measure("server broadcast command, 32 byte payload", ServerBroadcast);
 			Measure("server receives + relays a property update", ServerReceiveAndRelay);
 			Measure("receive command packet, callback registered", ReceiveCommandPacket);
+			Measure("  ... just the Command decode", DecodeCommandOnly);
 			Measure("chat line that is not ours", ChatMiss);
 			Measure("chat line that is ours", ChatHit);
+			Measure("server answers 200 blocks x 4 fetches", ServerAnswersAGridOfFetches);
+			Measure("client streams in 200 blocks x 4 properties", ClientStreamsInAGrid);
 
 			Console.WriteLine(new string('-', 78));
 			Console.WriteLine($"packets: client stream-in {Probed}, server answers {ProbedServer}");
@@ -64,17 +69,25 @@ namespace SENetworkAPI.Benchmarks
 
 		private static void Measure(string name, Func<Action> setup)
 		{
+			// One scenario per process when a filter is given: a scenario that
+			// allocates hundreds of KB per op leaves the heap in a state that
+			// skews everything measured after it.
+			if (Filter != null && Filter.Length > 0 && !name.Contains(Filter[0]))
+			{
+				return;
+			}
+
 			Reset();
 			Action op = setup();
 
-			for (int i = 0; i < Math.Min(Warmup, 20); i++)
+			for (int i = 0; i < (name.Contains("200 blocks") ? 5 : Warmup); i++)
 			{
 				op();
 			}
 
-			GC.Collect();
+			GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
 			GC.WaitForPendingFinalizers();
-			GC.Collect();
+			GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
 
 			int iterations = name.Contains("200 blocks") ? HeavyIterations : Iterations;
 			long before = GC.GetAllocatedBytesForCurrentThread();
@@ -385,6 +398,13 @@ namespace SENetworkAPI.Benchmarks
 				game.Multiplayer.Deliver(ComId, packet);
 				Drain();
 			};
+		}
+
+		private static Action DecodeCommandOnly()
+		{
+			Client();
+			byte[] packet = CommandPacket("update", new byte[32]);
+			return () => { Command c = MyAPIGateway.Utilities.SerializeFromBinary<Command>(packet); };
 		}
 
 		private static Action ChatMiss()
