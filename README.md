@@ -18,6 +18,11 @@ even when compact batches are disabled, and retain `license.txt`.
 When upgrading, replace your previous API source files to avoid duplicate class
 definitions. Pick a unique communication channel for your mod.
 
+`SessionTools.cs` automatically unregisters handlers and clears API state when
+the world unloads. With that component included, your mod does not need to call
+`NetworkAPI.Dispose()` or `NetworkAPI.Instance.Close()` during unload. Those
+methods remain available for compatibility with older mod code.
+
 The `tests/` and `TestFiles/` folders are development tools and test scenarios;
 they are not part of the API installation. Copy only `SENetworkAPI/`, rather than
 the repository, into your mod's scripts directory.

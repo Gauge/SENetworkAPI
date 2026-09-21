@@ -474,8 +474,13 @@ namespace SENetworkAPI
 		public abstract void Say(string message);
 
 		/// <summary>Unregisters the message and chat handlers.</summary>
-		[ObsoleteAttribute("This property is obsolete. Close is no longer required", false)]
+		[ObsoleteAttribute("Manual Close() is unnecessary when SessionTools is included; it automatically cleans up the API when the world unloads.", false)]
 		public void Close()
+		{
+			UnregisterHandlers();
+		}
+
+		internal void UnregisterHandlers()
 		{
 			MyLog.Default.Info($"[NetworkAPI] Unregistering communication stream: {ComId}");
 			if (UsingTextCommands)
@@ -488,12 +493,17 @@ namespace SENetworkAPI
 		}
 
 		/// <summary>Closes the instance and clears the property registries.</summary>
-		[ObsoleteAttribute("This property is obsolete. Dispose is no longer required", false)]
+		[ObsoleteAttribute("Manual Dispose() is unnecessary when SessionTools is included; it automatically cleans up the API when the world unloads.", false)]
 		public static void Dispose()
+		{
+			Shutdown();
+		}
+
+		internal static void Shutdown()
 		{
 			if (IsInitialized)
 			{
-				Instance.Close();
+				Instance.UnregisterHandlers();
 			}
 
 			Instance = null;

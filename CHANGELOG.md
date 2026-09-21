@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+* Route automatic session cleanup through internal methods, retaining public
+  `Dispose()` and `Close()` as compatibility wrappers. Clarify that their
+  warnings refer to manual calls when `SessionTools` is included.
+
 * Isolate the seven runtime sources and license in the copy-ready `SENetworkAPI/`
   folder. Keep tests and benchmarks outside the mod installation; track remaining
   performance work in `TASKS.md`.

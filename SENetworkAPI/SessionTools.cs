@@ -13,7 +13,7 @@ namespace SENetworkAPI
 		/// <summary>Disposes the API when the world unloads.</summary>
 		protected override void UnloadData()
 		{
-			NetworkAPI.Dispose();
+			NetworkAPI.Shutdown();
 		}
 	}
 }
