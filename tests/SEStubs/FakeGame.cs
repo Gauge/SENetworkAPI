@@ -167,6 +167,7 @@ namespace SEStubs
 		public bool DeliverToSelf = true;
 
 		private readonly Dictionary<ushort, List<Action<byte[]>>> _handlers = new Dictionary<ushort, List<Action<byte[]>>>();
+		private readonly Dictionary<ushort, List<Action<ushort, byte[], ulong, bool>>> _secureHandlers = new Dictionary<ushort, List<Action<ushort, byte[], ulong, bool>>>();
 		private int _loopbackDepth;
 
 		/// <summary>
@@ -192,20 +193,25 @@ namespace SEStubs
 			}
 		}
 
-		// SENetworkAPI does not use the secure pair; they exist so the stub
-		// mirrors the real interface.
-		public void RegisterSecureMessageHandler(ushort id, Action<ushort, byte[], ulong, bool> messageHandler) { }
-		public void UnregisterSecureMessageHandler(ushort id, Action<ushort, byte[], ulong, bool> messageHandler) { }
-
-		public int HandlerCount(ushort id) => _handlers.ContainsKey(id) ? _handlers[id].Count : 0;
-
-		/// <summary>Pushes a packet into the registered handlers, as the game does on receive.</summary>
-		public void Deliver(ushort id, byte[] message)
+		public void RegisterSecureMessageHandler(ushort id, Action<ushort, byte[], ulong, bool> handler)
 		{
-			if (!_handlers.ContainsKey(id))
-			{
-				return;
-			}
+			if (!_secureHandlers.ContainsKey(id))
+				_secureHandlers.Add(id, new List<Action<ushort, byte[], ulong, bool>>());
+			_secureHandlers[id].Add(handler);
+		}
+
+		public void UnregisterSecureMessageHandler(ushort id, Action<ushort, byte[], ulong, bool> handler)
+		{
+			if (_secureHandlers.ContainsKey(id)) _secureHandlers[id].Remove(handler);
+		}
+
+		public int HandlerCount(ushort id) =>
+			(_handlers.ContainsKey(id) ? _handlers[id].Count : 0) +
+			(_secureHandlers.ContainsKey(id) ? _secureHandlers[id].Count : 0);
+
+		/// <summary>Transport identity is independent of the serialized envelope.</summary>
+		public void Deliver(ushort id, byte[] message, ulong senderId = 200, bool? fromServer = null)
+		{
 
 			if (++_loopbackDepth > MaxLoopbackDepth)
 			{
@@ -216,10 +222,11 @@ namespace SEStubs
 
 			try
 			{
-				foreach (Action<byte[]> handler in _handlers[id].ToArray())
-				{
-					handler(message);
-				}
+				if (_handlers.ContainsKey(id))
+					foreach (Action<byte[]> handler in _handlers[id].ToArray()) handler(message);
+				if (_secureHandlers.ContainsKey(id))
+					foreach (Action<ushort, byte[], ulong, bool> handler in _secureHandlers[id].ToArray())
+						handler(id, message, senderId, fromServer ?? !IsServer);
 			}
 			finally
 			{
@@ -257,7 +264,7 @@ namespace SEStubs
 
 			if (addressedToSelf && DeliverToSelf)
 			{
-				Deliver(packet.ComId, packet.Data);
+				Deliver(packet.ComId, packet.Data, LocalSteamId, IsServer);
 			}
 
 			return true;

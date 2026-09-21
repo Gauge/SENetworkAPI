@@ -125,8 +125,8 @@ namespace VRage.Utils
 namespace VRage
 {
 	/// <summary>
-	/// The game uses a proprietary block compressor; GZip is behaviourally
-	/// equivalent for our purposes (round-trips bytes, changes the length).
+	/// Matches the installed game's GZip framing: a four-byte uncompressed
+	/// length followed by a GZip stream. Runtime compression ratios may differ.
 	/// </summary>
 	public static class MyCompression
 	{
@@ -138,24 +138,36 @@ namespace VRage
 			CompressCallCount++;
 			using (MemoryStream output = new MemoryStream())
 			{
-				using (GZipStream gzip = new GZipStream(output, CompressionLevel.Fastest, true))
+				using (GZipStream gzip = new GZipStream(output, CompressionMode.Compress, true))
 				{
 					gzip.Write(data, 0, data.Length);
 				}
 
-				return output.ToArray();
+				byte[] result = new byte[checked((int)output.Length + 4)];
+				Buffer.BlockCopy(BitConverter.GetBytes(data.Length), 0, result, 0, 4);
+				output.Position = 0;
+				output.Read(result, 4, (int)output.Length);
+				return result;
 			}
 		}
 
 		public static byte[] Decompress(byte[] data)
 		{
 			DecompressCallCount++;
-			using (MemoryStream input = new MemoryStream(data))
+			int length = BitConverter.ToInt32(data, 0);
+			using (MemoryStream input = new MemoryStream(data, 4, data.Length - 4))
 			using (GZipStream gzip = new GZipStream(input, CompressionMode.Decompress))
-			using (MemoryStream output = new MemoryStream())
 			{
-				gzip.CopyTo(output);
-				return output.ToArray();
+				byte[] result = new byte[length];
+				int offset = 0;
+				// Modern .NET stream reads may return partial data.
+				while (offset < length)
+				{
+					int read = gzip.Read(result, offset, length - offset);
+					if (read == 0) throw new InvalidDataException("Truncated compressed payload.");
+					offset += read;
+				}
+				return result;
 			}
 		}
 	}

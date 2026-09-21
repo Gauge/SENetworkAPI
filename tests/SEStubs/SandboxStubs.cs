@@ -29,8 +29,7 @@ namespace VRage.Game.ModAPI
 	{
 		bool IsServer { get; }
 
-		// Note: the non-secure pair is [Obsolete] in the shipped game, which is
-		// what SENetworkAPI still uses. See docs/known-issues.md.
+		// Legacy handlers retained for compatibility tests.
 		void RegisterMessageHandler(ushort id, Action<byte[]> messageHandler);
 		void UnregisterMessageHandler(ushort id, Action<byte[]> messageHandler);
 

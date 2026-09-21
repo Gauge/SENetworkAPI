@@ -6,7 +6,7 @@ engine behaves the way the unit tests assume.
 
 ## Running it
 
-1. Copy these files, plus the API sources from the repository root, into a mod
+1. Copy these files, plus the API sources from `SENetworkAPI/`, into a mod
    folder under `%AppData%/SpaceEngineers/Mods/`.
 2. Enable the mod in a world, search "Test Block" in the G menu and place one.
 3. Drive it from chat with `test <command>`.

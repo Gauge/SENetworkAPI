@@ -24,5 +24,7 @@ namespace SENetworkAPI
 		public SyncData Property { get; set; }
 		[ProtoMember(9)]
 		public List<SyncData> Properties { get; set; }
+		[ProtoMember(10)]
+		public int BatchFormat { get; set; }
 	}
 }

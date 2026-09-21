@@ -14,13 +14,13 @@
     The production sources are compiled *into* the test assembly rather than
     referenced, for two reasons:
       1. There is no shipping .csproj; Space Engineers compiles mod sources
-         itself, so the repo is a bare folder of .cs files.
+         itself, using the copy-ready SENetworkAPI/ source folder.
       2. Most of the interesting surface (Command, SyncData, SendCommand(Command..),
          the NetSync registries) is `internal`. Compiling in place makes it
          reachable without adding InternalsVisibleTo to shipped code.
   -->
   <ItemGroup>
-    <Compile Include="../../*.cs" LinkBase="Production" />
+    <Compile Include="../../SENetworkAPI/*.cs" LinkBase="Production" />
   </ItemGroup>
 
   <ItemGroup>

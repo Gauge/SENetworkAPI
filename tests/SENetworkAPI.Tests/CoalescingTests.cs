@@ -77,7 +77,8 @@ namespace SENetworkAPI.Tests
 		[Fact]
 		public void EachEntityGetsItsOwnPacket()
 		{
-			GivenClient();
+			GivenServer();
+			Game.Players.Add(ClientId, Vector3D.Zero);
 			MyEntity first = Game.CreateEntity();
 			MyEntity second = Game.CreateEntity();
 			NetSync<int> a = Coalesced(first);
@@ -100,7 +101,8 @@ namespace SENetworkAPI.Tests
 		[Fact]
 		public void SessionAndEntityPropertiesDoNotShareAPacket()
 		{
-			GivenClient();
+			GivenServer();
+			Game.Players.Add(ClientId, Vector3D.Zero);
 			MyEntity entity = Game.CreateEntity();
 			NetSync<int> onEntity = Coalesced(entity);
 			NetSync<int> onSession = Coalesced();
@@ -117,7 +119,8 @@ namespace SENetworkAPI.Tests
 		public void DistanceLimitedAndUnlimitedPropertiesDoNotShareAPacket()
 		{
 			// One goes to everyone, the other only to players near the entity.
-			GivenClient();
+			GivenServer();
+			Game.Players.Add(ClientId, Vector3D.Zero);
 			MyEntity entity = Game.CreateEntity();
 			NetSync<int> limited = new NetSync<int>(entity, TransferType.Both, 0, syncOnLoad: false).Coalesce();
 			NetSync<int> unlimited = new NetSync<int>(entity, TransferType.Both, 0, syncOnLoad: false, limitToSyncDistance: false).Coalesce();
@@ -395,7 +398,8 @@ namespace SENetworkAPI.Tests
 		public void AGroupThatCannotBeSentDoesNotStopTheOthers()
 		{
 			// Flush runs from the game's update queue, so nothing may escape it.
-			GivenClient();
+			GivenServer();
+			Game.Players.Add(ClientId, Vector3D.Zero);
 			MyEntity broken = Game.CreateEntity();
 			MyEntity fine = Game.CreateEntity();
 			NetSync<int> a = Coalesced(broken);

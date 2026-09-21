@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased
+
+* Isolate the seven runtime sources and license in the copy-ready `SENetworkAPI/`
+  folder. Keep tests and benchmarks outside the mod installation; track remaining
+  performance work in `TASKS.md`.
+
+* Complete secure message handling: server callbacks use authenticated sender
+  IDs, clients reject non-server packets, and incoming property directions are
+  enforced. Client fetch replies and writes against the declared direction are
+  no longer accepted.
+* Group coalesced updates in linear expected time. Client updates and unrestricted
+  server updates can share packets across entities; positional server groups
+  remain separate. Coalesced server relays now wait for the flush while callbacks
+  remain immediate.
+* Select and reuse recipients before serializing distance-limited properties.
+  Directed sends continue to see players who join during the current frame.
+* Split batches by encoded byte size as well as item count, retaining reliable
+  fallback for an individual oversized value. Compress large individual
+  properties using the existing legacy layout only when it saves bytes.
+* Adapt recipient lookup to player count, query volume, and selectivity, tuned
+  for typical 10–40-player servers. Use a spatial index for repeated selective
+  queries and snapshot bounds for crowded areas, retaining direct scans for
+  short bursts and small populations. No player or recipient cap is imposed.
+* Add opt-in compact property batches (`UseCompactBatches`): shared entity IDs,
+  packed metadata, and whole-batch compression. Command field 10 identifies
+  format 1. Old field numbers are unchanged; the default outbound layout remains
+  compatible with older peers. Updated receivers accept both layouts.
+* Skip compact encoding attempts below `CompactBatchThreshold` (256 bytes),
+  and keep the original layout when encoding would not save bytes. Send timing
+  and the existing coalescing schedule are unchanged.
+* Repair the secure transport test stub, match the installed game's GZip length
+  prefix, and add regression tests plus payload / many-entity benchmarks.
+
 ## 2.0.0
 
 Mods embed these sources rather than referencing a binary, so updating means

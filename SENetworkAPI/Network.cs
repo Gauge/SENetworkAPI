@@ -38,6 +38,16 @@ namespace SENetworkAPI
 		public static int CompressionThreshold = 1024;
 
 		/// <summary>
+		/// Enables compact, optionally compressed property batches on send.
+		/// Every receiver must support batch format 1. Legacy packets are always
+		/// accepted; leave disabled when communicating with older library copies.
+		/// </summary>
+		public static bool UseCompactBatches = false;
+
+		/// <summary>Minimum legacy batch bytes worth attempting to pack. No send is delayed.</summary>
+		public static int CompactBatchThreshold = 256;
+
+		/// <summary>
 		/// Size in bytes above which the game discards an unreliable message.
 		/// Packets over this are sent reliably instead.
 		/// </summary>
@@ -50,6 +60,28 @@ namespace SENetworkAPI
 
 		internal static void Compress(Command cmd)
 		{
+			if (cmd.BatchFormat != 0) return;
+			if (UseCompactBatches && cmd.IsProperty && cmd.Properties != null && cmd.Property == null)
+			{
+				CompactBatch.TryEncode(cmd);
+				return;
+			}
+			// The original property layout already supports compression. Keep
+			// small values inline; use that layout only when it actually saves bytes.
+			if (!cmd.IsCompressed && cmd.Property != null && cmd.Property.Data != null &&
+				cmd.Property.Data.Length > CompressionThreshold)
+			{
+				byte[] encoded = MyAPIGateway.Utilities.SerializeToBinary(cmd.Property);
+				byte[] packed = MyCompression.Compress(encoded);
+				if (packed.Length + 2 < encoded.Length)
+				{
+					cmd.Data = packed;
+					cmd.Property = null;
+					cmd.IsCompressed = true;
+				}
+				return;
+			}
+
 			if (cmd.IsCompressed || cmd.Data == null || cmd.Data.Length <= CompressionThreshold)
 			{
 				return;
@@ -119,8 +151,8 @@ namespace SENetworkAPI
 				MyAPIGateway.Utilities.MessageEntered += HandleChatInput;
 			}
 
-			MyAPIGateway.Multiplayer.UnregisterMessageHandler(ComId, HandleIncomingPacket);
-			MyAPIGateway.Multiplayer.RegisterMessageHandler(ComId, HandleIncomingPacket);
+			MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(ComId, HandleIncomingPacket);
+			MyAPIGateway.Multiplayer.RegisterSecureMessageHandler(ComId, HandleIncomingPacket);
 
 			MyLog.Default.Info($"[NetworkAPI] Initialized. Version: {Version} Type: {GetType().Name} ComId: {ComId} Name: {ModName} Keyword: {Keyword}");
 		}
@@ -200,11 +232,17 @@ namespace SENetworkAPI
 			}
 		}
 
-		private void HandleIncomingPacket(byte[] msg)
+		private void HandleIncomingPacket(ushort channelId, byte[] payload, ulong senderId, bool fromServer)
 		{
+			// Reject unauthenticated client-to-client traffic before decoding it.
+			if (channelId != ComId || (!MyAPIGateway.Multiplayer.IsServer && !fromServer))
+			{
+				return;
+			}
+
 			try
 			{
-				Command cmd = MyAPIGateway.Utilities.SerializeFromBinary<Command>(msg);
+				Command cmd = MyAPIGateway.Utilities.SerializeFromBinary<Command>(payload);
 
 				if (cmd == null)
 				{
@@ -214,6 +252,13 @@ namespace SENetworkAPI
 					}
 
 					return;
+				}
+
+				// A server-provided envelope may describe a relayed sender. Clients
+				// trust that envelope only after verifying the transport's server flag.
+				if (MyAPIGateway.Multiplayer.IsServer)
+				{
+					cmd.SteamId = senderId;
 				}
 
 				if (LogNetworkTraffic)
@@ -226,6 +271,13 @@ namespace SENetworkAPI
 				{
 					cmd.Data = MyCompression.Decompress(cmd.Data);
 					cmd.IsCompressed = false;
+				}
+
+				if (cmd.BatchFormat != 0)
+				{
+					if (cmd.BatchFormat != 1 || !cmd.IsProperty || cmd.Property != null || cmd.Properties != null)
+						throw new InvalidOperationException("Unsupported or ambiguous compact batch format.");
+					cmd.Properties = CompactBatch.Decode(cmd.Data);
 				}
 
 				if (cmd.IsProperty)
@@ -431,7 +483,7 @@ namespace SENetworkAPI
 				MyAPIGateway.Utilities.MessageEntered -= HandleChatInput;
 			}
 
-			MyAPIGateway.Multiplayer.UnregisterMessageHandler(ComId, HandleIncomingPacket);
+			MyAPIGateway.Multiplayer.UnregisterSecureMessageHandler(ComId, HandleIncomingPacket);
 
 		}
 

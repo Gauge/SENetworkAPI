@@ -29,6 +29,13 @@ namespace SENetworkAPI.Benchmarks
 
 		private static void Main(string[] args)
 		{
+			if (args.Length == 4 && args[0] == "population")
+			{
+				PopulationBenchmark(int.Parse(args[1]), args[2], int.Parse(args[3]));
+				return;
+			}
+			if (args.Length > 0 && args[0] == "payload") { PayloadSizes(); return; }
+			if (args.Length > 0 && args[0] == "batch-payload") { BatchPayloadSizes(); return; }
 			Filter = args;
 			if (args.Length == 0) Console.WriteLine($"SENetworkAPI hot path benchmark   ({(IsDebug() ? "DEBUG - rebuild with -c Release" : "release")})");
 			Console.WriteLine(new string('-', 78));
@@ -42,6 +49,16 @@ namespace SENetworkAPI.Benchmarks
 			Measure("entity property assign, nobody in range", EntityPropertyAssignNobodyInRange);
 			Measure("8 properties on a block, same frame, 64 players", BlockOfPropertiesPerFrame);
 			Measure("  ... the same, coalesced", BlockOfPropertiesCoalesced);
+			Measure("200 blocks x 4 coalesced updates, server", () => ManyBlocksCoalesced(200));
+			Measure("2000 blocks x 4 coalesced updates, server", () => ManyBlocksCoalesced(2000));
+			Measure("2000 blocks recipient queries, 8 players", () => RecipientQueries(8, false));
+			Measure("2000 blocks recipient queries, 64 players", () => RecipientQueries(64, false));
+			Measure("2000 blocks recipient queries, 256 players", () => RecipientQueries(256, false));
+			Measure("2000 blocks recipient queries, 64 dense", () => RecipientQueries(64, true));
+			Measure("batch encode legacy, 256 values", () => EncodeBatch(false));
+			Measure("batch encode compact, 256 values", () => EncodeBatch(true));
+			Measure("batch decode legacy, 256 values", () => DecodeBatch(false));
+			Measure("batch decode compact, 256 values", () => DecodeBatch(true));
 			Measure("property fetch (client -> server)", PropertyFetch);
 			Measure("server broadcast command, 32 byte payload", ServerBroadcast);
 			Measure("server receives + relays a property update", ServerReceiveAndRelay);
@@ -80,7 +97,7 @@ namespace SENetworkAPI.Benchmarks
 			Reset();
 			Action op = setup();
 
-			for (int i = 0; i < (name.Contains("200 blocks") ? 5 : Warmup); i++)
+			for (int i = 0; i < (name.Contains("blocks") ? 30 : Warmup); i++)
 			{
 				op();
 			}
@@ -89,7 +106,7 @@ namespace SENetworkAPI.Benchmarks
 			GC.WaitForPendingFinalizers();
 			GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
 
-			int iterations = name.Contains("200 blocks") ? HeavyIterations : Iterations;
+			int iterations = name.Contains("blocks") ? HeavyIterations : name.Contains("batch ") ? 20000 : Iterations;
 			long before = GC.GetAllocatedBytesForCurrentThread();
 			Stopwatch watch = Stopwatch.StartNew();
 			for (int i = 0; i < iterations; i++)
@@ -112,6 +129,9 @@ namespace SENetworkAPI.Benchmarks
 			_game?.Dispose();
 			NetworkAPI.Instance = null;
 			NetworkAPI.LogNetworkTraffic = false;
+			NetworkAPI.UseCompactBatches = false;
+			NetworkAPI.CompressionThreshold = 1024;
+			NetworkAPI.CompactBatchThreshold = 256;
 			NetSync.ClearRegistries();
 			VRage.Utils.MyLog.Default.Clear();
 		}
@@ -278,6 +298,160 @@ namespace SENetworkAPI.Benchmarks
 				property.Value = i++;
 				Drain();
 			};
+		}
+
+		private static List<SyncData> BatchValues(int count, bool sharedEntity, bool randomPayload)
+		{
+			var random = new Random(9);
+			var values = new List<SyncData>(count);
+			for (int i = 0; i < count; i++)
+			{
+				byte[] value = randomPayload ? new byte[128] : StubSerializer.Serialize(i);
+				if (randomPayload) random.NextBytes(value);
+				values.Add(new SyncData { Id = i, EntityId = 123456789000000 + (sharedEntity ? 0 : i), SyncType = SyncType.Broadcast, Data = value });
+			}
+			return values;
+		}
+
+		private static Action EncodeBatch(bool compact)
+		{
+			Client();
+			NetworkAPI.UseCompactBatches = compact;
+			var values = BatchValues(256, true, false);
+			return () =>
+			{
+				NetworkAPI.Instance.SendCommand(new Command { IsProperty = true, Properties = values });
+				Drain();
+			};
+		}
+
+		private static Action DecodeBatch(bool compact)
+		{
+			Client();
+			NetworkAPI.UseCompactBatches = compact;
+			NetworkAPI.Instance.SendCommand(new Command { IsProperty = true, Properties = BatchValues(256, true, false) });
+			byte[] wire = _game.Sent[0].Data;
+			Drain();
+			return () =>
+			{
+				Command command = StubSerializer.Deserialize<Command>(wire);
+				if (command.BatchFormat == 1)
+					CompactBatch.Decode(command.IsCompressed ? VRage.MyCompression.Decompress(command.Data) : command.Data);
+			};
+		}
+
+		private static void BatchPayloadSizes()
+		{
+			foreach (bool shared in new[] { true, false })
+			foreach (bool random in new[] { false, true })
+			foreach (bool compact in new[] { false, true })
+			{
+				Reset();
+				Client();
+				NetworkAPI.UseCompactBatches = compact;
+				NetworkAPI.Instance.SendCommand(new Command { IsProperty = true, Properties = BatchValues(64, shared, random) });
+				ReportPayload($"64 values, {(compact ? "compact" : "legacy")}, {(shared ? "shared" : "mixed")} entities, {(random ? "random byte arrays" : "integers")}");
+			}
+			foreach (bool compact in new[] { false, true })
+			{
+				Reset();
+				Client();
+				NetworkAPI.UseCompactBatches = compact;
+				NetworkAPI.Instance.SendCommand(new Command { IsProperty = true, Properties = BatchValues(256, true, false) });
+				var command = StubSerializer.Deserialize<Command>(_game.Sent[0].Data);
+				ReportPayload($"256 values, {(compact ? "compact" : "legacy")}, shared entities, integers, compressed={command.IsCompressed}");
+			}
+		}
+
+		// Realistic server populations, with snapshot rebuilding included. Run
+		// one case per process: population <players> <spread|groups|dense> <queries>.
+		private static void PopulationBenchmark(int players, string layout, int queries)
+		{
+			Reset();
+			_game = FakeGame.StartDedicatedServer();
+			var points = new Vector3D[players];
+			for (int i = 0; i < players; i++)
+			{
+				double x = layout == "dense" ? i * 10 : layout == "groups" ? (i / 5) * 20000 + i % 5 * 10 : i * 20000;
+				points[i] = new Vector3D(x, 0, 0);
+				_game.Players.Add((ulong)(1000 + i), points[i]);
+			}
+			NetworkAPI.Init(ComId, "Bench");
+			var server = (Server)NetworkAPI.Instance;
+			Action frame = () =>
+			{
+				_game.NextFrame();
+				for (int i = 0; i < queries; i++)
+				{
+					var recipients = server.CollectRecipients(points[i % players], 10000, 0, 0);
+					server.ReleaseRecipients(recipients);
+				}
+			};
+			for (int i = 0; i < 100; i++) frame();
+			GC.Collect();
+			int iterations = Math.Max(1000, 200000 / queries);
+			long before = GC.GetAllocatedBytesForCurrentThread();
+			var watch = Stopwatch.StartNew();
+			for (int i = 0; i < iterations; i++) frame();
+			watch.Stop();
+			Console.WriteLine($"{players},{layout},{queries},{watch.Elapsed.TotalMilliseconds * 1000000 / iterations:F1},{(GC.GetAllocatedBytesForCurrentThread() - before) / (double)iterations:F1}");
+		}
+
+		private static Action RecipientQueries(int players, bool dense)
+		{
+			FakeGame game = Server(players, dense ? 1 : 2000);
+			Server server = (Server)NetworkAPI.Instance;
+			return () =>
+			{
+				game.NextFrame();
+				for (int i = 0; i < 2000; i++)
+				{
+					var recipients = server.CollectRecipients(new Vector3D(dense ? 0 : i * 1000, 0, 0), 1000, 0, HostId);
+					server.ReleaseRecipients(recipients);
+				}
+			};
+		}
+
+		private static Action ManyBlocksCoalesced(int blocks)
+		{
+			FakeGame game = Server(players: 64, spread: 1000);
+			var properties = new NetSync<int>[blocks * 4];
+			for (int b = 0; b < blocks; b++)
+			{
+				MyEntity entity = game.CreateEntity(new Vector3D(b, 0, 0));
+				for (int p = 0; p < 4; p++)
+					properties[b * 4 + p] = new NetSync<int>(entity, TransferType.Both, 0, syncOnLoad: false).Coalesce();
+			}
+			int tick = 0;
+			return () =>
+			{
+				tick++;
+				for (int i = 0; i < properties.Length; i++) properties[i].Value = tick + i;
+				game.NextFrame();
+				Drain();
+			};
+		}
+
+		private static void PayloadSizes()
+		{
+			Reset();
+			FakeGame game = Client();
+			for (int i = 0; i < 100; i++)
+				new NetSync<int>(game.CreateEntity(), TransferType.Both, 0, syncOnLoad: false).Coalesce().Value = i + 1;
+			game.NextFrame();
+			ReportPayload("100 client entities, coalesced integers");
+
+			Reset();
+			Server();
+			new NetSync<string>(new Session(), TransferType.ServerToClient, new string('a', 10000), syncOnLoad: false).Push();
+			ReportPayload("10,000 repeated characters, one property");
+		}
+
+		private static void ReportPayload(string label)
+		{
+			long bytes = 0;
+			for (int i = 0; i < _game.Sent.Count; i++) bytes += _game.Sent[i].Data.Length;
+			Console.WriteLine($"{label}: {_game.Sent.Count} packets, {bytes} bytes");
 		}
 
 		private static Action PropertyFetch()

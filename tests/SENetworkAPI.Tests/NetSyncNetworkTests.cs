@@ -398,11 +398,9 @@ namespace SENetworkAPI.Tests
 		}
 
 		[Fact]
-		public void AClientReceivingAFetchRequest_AlsoAnswersIt()
+		public void AClientReceivingAFetchRequest_DoesNotAnswerIt()
 		{
-			// RouteMessage does not check the local role, so a client that is
-			// asked for a value will reply. Only reachable if a mod sends a
-			// fetch packet from the server side.
+			// Fetch is a client-to-server request, never a request for client state.
 			GivenClient();
 			NetSync<int> property = SessionProperty(start: 5);
 			Game.ClearTraffic();
@@ -410,8 +408,7 @@ namespace SENetworkAPI.Tests
 			Receive(EncodePropertyPacket(property.Id, 0, SyncType.Fetch, from: HostId));
 			Game.NextFrame();
 
-			Assert.Single(Game.Sent);
-			Assert.Equal(SyncType.Post, DecodeSyncData(Game.Sent[0]).SyncType);
+			Assert.Empty(Game.Sent);
 		}
 
 		// -------------------------------------------------------------------
@@ -518,8 +515,8 @@ namespace SENetworkAPI.Tests
 			NetSync<int> property = SessionProperty(start: 7);
 			Game.ClearTraffic();
 
-			Receive(EncodePropertyPacket(property.Id, 0, SyncType.Fetch, from: 201));
-			Receive(EncodePropertyPacket(property.Id, 0, SyncType.Fetch, from: 202));
+			Receive(EncodePropertyPacket(property.Id, 0, SyncType.Fetch, from: 201), senderId: 201);
+			Receive(EncodePropertyPacket(property.Id, 0, SyncType.Fetch, from: 202), senderId: 202);
 			Game.NextFrame();
 
 			Assert.Equal(2, Game.Sent.Count);

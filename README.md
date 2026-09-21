@@ -8,7 +8,23 @@ It gives you two things:
 * **`NetSync<T>`** — a variable that keeps itself in step across the network.
 * **Commands** — named messages with callbacks, drivable from code or from chat.
 
-Drop the `.cs` files into your mod, pick a communication channel, and go.
+## Installing in a mod
+
+Copy the entire [`SENetworkAPI/`](SENetworkAPI/) folder into
+`<YourMod>/Data/Scripts/<YourModName>/`. It contains only the seven runtime `.cs`
+files and their license. Include all seven files, including `CompactBatch.cs`
+even when compact batches are disabled, and retain `license.txt`.
+
+When upgrading, replace your previous API source files to avoid duplicate class
+definitions. Pick a unique communication channel for your mod.
+
+The `tests/` and `TestFiles/` folders are development tools and test scenarios;
+they are not part of the API installation. Copy only `SENetworkAPI/`, rather than
+the repository, into your mod's scripts directory.
+
+Remaining performance work and validation tasks are tracked in
+[`TASKS.md`](TASKS.md). Benchmark instructions and results are in
+[`tests/Benchmarks/README.md`](tests/Benchmarks/README.md).
 
 ## Syncing a variable
 
@@ -89,7 +105,48 @@ By default an assignment that does not change the value sends nothing and does
 not raise `ValueChanged`; reference types are always sent, since their contents
 can change behind the reference. `AlwaysSend()` restores the old behaviour.
 
-Details: [docs/netsync.md](docs/netsync.md).
+Coalescing applies to server relays as well as local assignments. Callbacks run
+immediately; the latest value is sent on the next flush. Client properties can
+share a packet across entities. Distance-limited server updates remain grouped
+by entity so each update reaches the appropriate players.
+
+Batches are limited to 500 values and a byte budget: 16 KiB for reliable traffic
+and 1,024 bytes for lossy traffic. A single value larger than its budget is sent
+intact, with reliable delivery when needed. Large individual property values
+are compressed when this saves space, using the existing legacy property layout.
+Multi-property packets use their existing layout by default. `CompressionThreshold`
+controls compression attempts; small values stay inline.
+
+Distance-limited sends select recipients before serializing values. If nobody
+is in range, the value remains local and no serialization is performed.
+Range queries adapt to player count, query volume, and how many players are
+nearby. Selective searches can use a spatial index; crowded areas can use a
+bounding-box check, with direct scans for short bursts and small populations.
+The tuning targets typical 10–40-player servers and imposes no player or recipient
+cap. All paths use the existing per-frame player snapshot and evaluate each
+query's current position, radius, and sender exclusion.
+
+To enable smaller batches when every receiver has the updated library (including
+`CompactBatch.cs`):
+
+```csharp
+NetworkAPI.UseCompactBatches = true;
+```
+
+Compact batches share repeated entity IDs, pack per-value metadata, and compress
+the entire batch when that saves bytes. The original value serialization stays
+unchanged. Small batches below `CompactBatchThreshold` (256 bytes by default)
+keep the existing layout; the compact layout is retained only when it is smaller.
+`CompressionThreshold` still controls the compression step. Immediate sends retain
+their timing, and `.Coalesce()` retains its existing flush schedule.
+
+`UseCompactBatches` defaults to `false` for older-peer compatibility. Updated
+receivers always accept both layouts, regardless of their own sending setting.
+There is no automatic capability negotiation; enable compact sending only once
+all intended receivers support it.
+
+Benchmark commands, results, and further payload options are in
+[tests/Benchmarks/README.md](tests/Benchmarks/README.md).
 
 ## Commands
 
@@ -111,8 +168,8 @@ Network.SendCommand("update", data: MyAPIGateway.Utilities.SerializeToBinary(con
 Network.SendCommand("update", data: bytes, steamId: playerId);   // server only
 ```
 
-Use lower-case command names — the receive-side lookup is case-sensitive — and
-never `null`, which is reserved for chat relays and cannot be registered.
+Command names are case insensitive. Never register `null`, which is reserved
+for chat relays.
 
 On the server the instance can be cast for the server-only sends:
 
@@ -126,7 +183,12 @@ if (Network.NetworkType != NetworkTypes.Client)
 }
 ```
 
-Details: [docs/networkapi.md](docs/networkapi.md).
+The server uses the sender ID supplied by the secure transport, ignoring the ID
+claimed in a client packet. Clients accept packets only when the transport marks
+them as coming from the server; their callbacks retain the server-provided
+envelope ID. Property transfer directions are enforced on receive as well as
+send. Only the server answers fetch requests. Mods still decide which commands
+and `Both` properties each player is allowed to use.
 
 ## Example session component
 

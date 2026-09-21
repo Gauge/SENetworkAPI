@@ -39,7 +39,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="../../*.cs" LinkBase="Production" />
+    <Compile Include="../../SENetworkAPI/*.cs" LinkBase="Production" />
   </ItemGroup>
 
   <ItemGroup>

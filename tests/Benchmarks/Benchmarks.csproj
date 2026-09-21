@@ -3,11 +3,11 @@
   <!--
     Allocation and throughput harness for the hot paths.
 
-        dotnet run -c Release  project tests/Benchmarks
+        See README.md in this directory for invocation examples.
 
     It runs against the SEStubs harness, not the game, so absolute numbers are
     indicative only. What matters is the delta between two runs: the stub
-    serializer is the same protobuf-net the game uses, and the allocation
+    serializer uses stock protobuf-net rather than the game's fork, and the allocation
     counts come from the same code paths a real session would execute.
   -->
 
@@ -24,7 +24,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="../../*.cs" LinkBase="Production" />
+    <Compile Include="../../SENetworkAPI/*.cs" LinkBase="Production" />
   </ItemGroup>
 
   <ItemGroup>
